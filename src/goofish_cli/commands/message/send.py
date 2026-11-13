@@ -74,6 +74,8 @@ async def _send(
     image_height: int,
     item_id: str,
 ) -> dict[str, Any]:
+    if not cid and not item_id:
+        raise ValueError("需要 cid 或 item_id，未发送")
     token = get_access_token(session)
     async with connect(session) as ws:
         handshake_mids = await register(ws, session, token)
@@ -88,7 +90,17 @@ async def _send(
                 create_mid = await create_chat(
                     ws, myid=session.unb, toid=toid, item_id=item_id
                 )
-                await recv_ack(ws, create_mid)
+                create_ack = await recv_ack(ws, create_mid)
+                if (create_ack or {}).get("code") != 200:
+                    detail = "无回包（超时）" if create_ack is None else f"ack_code={create_ack.get('code')}"
+                    raise GoofishError(f"创建会话失败：{detail}，未发送")
+                conversation = (create_ack.get("body") or {}).get("singleChatConversation") or {}
+                created_cid = conversation.get("cid")
+                if not isinstance(created_cid, str) or not created_cid.strip():
+                    raise GoofishError("创建会话未返回有效 cid，未发送")
+                cid = created_cid.strip().removesuffix("@goofish")
+                if not cid:
+                    raise GoofishError("创建会话未返回有效 cid，未发送")
 
             if kind == "text":
                 if not text:

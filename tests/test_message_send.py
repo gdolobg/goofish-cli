@@ -69,6 +69,7 @@ def make_responder(
     send_code: int | None = 200,
     create_code: int | None = 200,
     message_id: str = "srv-1",
+    created_cid: str | None = "created-1@goofish",
 ):
     def responder(frame: dict) -> list[dict]:
         lwp = frame.get("lwp")
@@ -82,7 +83,7 @@ def make_responder(
         if lwp == "/r/SyncStatus/ackDiff":
             return [{"headers": {"mid": mid}, "code": ack_diff_code}]
         if lwp == CREATE_LWP:
-            return [] if create_code is None else [{"headers": {"mid": mid}, "code": create_code}]
+            return [] if create_code is None else [{"headers": {"mid": mid}, "code": create_code, "body": {"singleChatConversation": {"cid": created_cid}}}]
         if lwp == SEND_LWP:
             if send_code is None:
                 return []
@@ -189,12 +190,34 @@ class TestCreateChat:
         order = ws.lwps()
         assert order.index(CREATE_LWP) < order.index(SEND_LWP)
 
-    def test_create_chat_without_ack_still_attempts_send(self, patched, monkeypatch):
-        """create-chat 没有回包时不应静默中止；发送仍要尝试并被校验。"""
+    @pytest.mark.parametrize("created_cid", ["created-1@goofish", "created-1"])
+    def test_uses_created_cid_for_send_and_receipt(self, patched, created_cid):
+        ws = patched(FakeWS(make_responder(created_cid=created_cid)))
+        out = run_send(cid="", item_id="item-1")
+        frame = next(f for f in ws.sent if f.get("lwp") == SEND_LWP)
+        assert frame["body"][0]["cid"] == "created-1@goofish"
+        assert out["cid"] == "created-1"
+
+    @pytest.mark.parametrize("create_code", [None, 400, 500])
+    def test_create_chat_failure_does_not_send(self, patched, monkeypatch, create_code):
         monkeypatch.setattr(send_mod, "recv_ack", _short_recv_ack)
-        ws = patched(FakeWS(make_responder(create_code=None)))
-        run_send(item_id="item-1")
-        assert SEND_LWP in ws.lwps()
+        ws = patched(FakeWS(make_responder(create_code=create_code)))
+        with pytest.raises(GoofishError, match="创建会话失败"):
+            run_send(item_id="item-1")
+        assert SEND_LWP not in ws.lwps()
+
+    @pytest.mark.parametrize("created_cid", [None, "", " ", "@goofish", 123])
+    def test_missing_or_invalid_created_cid_does_not_send(self, patched, created_cid):
+        ws = patched(FakeWS(make_responder(created_cid=created_cid)))
+        with pytest.raises(GoofishError, match="未返回有效 cid"):
+            run_send(item_id="item-1")
+        assert SEND_LWP not in ws.lwps()
+
+    def test_missing_cid_and_item_id_does_not_connect(self, patched):
+        ws = patched(FakeWS(make_responder()))
+        with pytest.raises(ValueError, match="需要 cid 或 item_id"):
+            run_send(cid="")
+        assert ws.sent == []
 
 
 # --- 把真实实现的超时压到测试可接受的量级 ---
