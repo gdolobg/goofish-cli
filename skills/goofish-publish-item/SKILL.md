@@ -167,3 +167,12 @@ for image in 本地图片路径:
 - `goofish-risk-guard` — 发布前扫描（标题/描述/图片）
 - `goofish-reply-buyer` — 发布后回买家消息
 - `goofish-shop-diagnosis` — 如果发布后流量差
+
+
+## Docker 沙盒部署
+
+当 MCP 启动参数为 `sandbox mcp` 时，所有业务 MCP 工具都在容器内执行。
+登录失效时提示用户在宿主机执行 `goofish sandbox login`；需要人工验证时使用
+`goofish sandbox browse --item-id <商品ID>`。不要提示本机 `goofish auth login`，
+也不要回退到宿主机浏览器。终端业务命令须使用 `goofish sandbox run <业务命令>`。
+沙盒是真实账号环境，写操作仍需用户授权。

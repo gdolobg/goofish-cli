@@ -4,7 +4,7 @@ description: |
   闲鱼（goofish.com）自动化运营的总入口 skill。何时激活：用户首次提到
   闲鱼 / 咸鱼 / goofish / 二手交易 / 挂闲置 / 回买家消息 / 发商品到闲鱼，
   或用户询问本工具如何使用、有哪些能力、能做什么。本 skill 介绍 goofish-cli
-  的定位、账号模型、17 个 MCP 工具速查、风控底线，并指向其它专项 skill
+  的定位、账号模型、19 个 MCP 工具速查、风控底线，并指向其它专项 skill
   （goofish-publish-item / goofish-reply-buyer / goofish-risk-guard /
   goofish-shop-diagnosis）。
 metadata:
@@ -54,7 +54,7 @@ metadata:
   `goofish auth login --qr`。
 - 账号身份细节见 `references/accounts.md`。
 
-## 17 个 MCP 工具速查
+## 19 个 MCP 工具速查
 
 详单在 `references/mcp-tools-index.md`。读不读看任务：
 - 发商品 → 只需 `category_recommend / media_upload / location_default / item_publish`
@@ -94,3 +94,17 @@ Agent 在 goofish 任务里请遵守：
 3. **所有对外发送（发商品、发消息）务必让用户先确认文案**，不要自动提交。
 4. **多步任务中途报状态**：上一步完成了什么、下一步准备做什么。闲鱼任务
    通常是 3-6 步，用户期望有进度感。
+
+
+## Docker 沙盒部署
+
+当 MCP 启动参数为 `sandbox mcp` 时，所有业务 MCP 工具都在容器内执行。
+登录失效时提示用户在宿主机执行 `goofish sandbox login`；需要人工验证时使用
+`goofish sandbox browse --item-id <商品ID>`。不要提示本机 `goofish auth login`，
+也不要回退到宿主机浏览器。终端业务命令须使用 `goofish sandbox run <业务命令>`。
+沙盒是真实账号环境，写操作仍需用户授权。
+
+下单先调用 `order_preview`，明确用户选择的 SKU、地址、数量和最高总价后，
+才可调用 `order_create_unpaid`。不付款；重试沿用同一 request_id，
+`needs_review` 或 `created_unverified` 时先核实订单，禁止换 ID 重提。
+当前仅支持单规格组商品。

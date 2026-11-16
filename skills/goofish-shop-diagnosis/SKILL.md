@@ -145,3 +145,12 @@ goofish-cli v0.2.4 是**无状态**的——它不记你昨天的曝光是多少
 
 - `goofish-publish-item` — 诊断完确定要改 → 改进发布
 - `goofish-risk-guard` — `publish-red-lines.md` 是本 skill 的核心知识源
+
+
+## Docker 沙盒部署
+
+当 MCP 启动参数为 `sandbox mcp` 时，所有业务 MCP 工具都在容器内执行。
+登录失效时提示用户在宿主机执行 `goofish sandbox login`；需要人工验证时使用
+`goofish sandbox browse --item-id <商品ID>`。不要提示本机 `goofish auth login`，
+也不要回退到宿主机浏览器。终端业务命令须使用 `goofish sandbox run <业务命令>`。
+沙盒是真实账号环境，写操作仍需用户授权。

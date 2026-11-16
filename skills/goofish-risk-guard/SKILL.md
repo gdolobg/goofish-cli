@@ -116,3 +116,12 @@ Claude Code / Cursor 调 `mcp__goofish__<逻辑名>`。frontmatter 的 `allowed-
 - `auth_status`：调其它工具前确认登录态
 
 **写操作本 skill 完全不调**（`item_publish / media_upload / message_send / item_delete` 都不在 allowed-tools）。
+
+
+## Docker 沙盒部署
+
+当 MCP 启动参数为 `sandbox mcp` 时，所有业务 MCP 工具都在容器内执行。
+登录失效时提示用户在宿主机执行 `goofish sandbox login`；需要人工验证时使用
+`goofish sandbox browse --item-id <商品ID>`。不要提示本机 `goofish auth login`，
+也不要回退到宿主机浏览器。终端业务命令须使用 `goofish sandbox run <业务命令>`。
+沙盒是真实账号环境，写操作仍需用户授权。

@@ -175,3 +175,12 @@ Agent 要模仿**用户自己的语气**，不要用 AI 常见的书面语：
 - `goofish-risk-guard` — 每条出门前扫外联词
 - `goofish-publish-item` — 发布的商品会回来的消息走本 skill
 - `goofish-shop-diagnosis` — 发现大量消息都是"还在吗"时，可能是已被限流（消息流入但买家看不到）
+
+
+## Docker 沙盒部署
+
+当 MCP 启动参数为 `sandbox mcp` 时，所有业务 MCP 工具都在容器内执行。
+登录失效时提示用户在宿主机执行 `goofish sandbox login`；需要人工验证时使用
+`goofish sandbox browse --item-id <商品ID>`。不要提示本机 `goofish auth login`，
+也不要回退到宿主机浏览器。终端业务命令须使用 `goofish sandbox run <业务命令>`。
+沙盒是真实账号环境，写操作仍需用户授权。
