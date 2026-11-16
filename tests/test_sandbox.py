@@ -16,6 +16,25 @@ from goofish_cli.sandbox import cli
 runner = CliRunner()
 
 
+def test_build_context_normalizes_windows_script_line_endings(tmp_path, monkeypatch):
+    package = tmp_path / 'source'
+    package.mkdir()
+    (package / '__init__.py').write_text('')
+    (package / '_bundled_skills').mkdir()
+    assets = tmp_path / 'assets'
+    assets.mkdir()
+    for name in ('Dockerfile', 'entrypoint.sh'):
+        (assets / name).write_bytes(b'#!/bin/bash\r\nexit 0\r\n')
+    monkeypatch.setattr(cli.goofish_cli, '__file__', str(package / '__init__.py'))
+    monkeypatch.setattr(cli, 'ASSETS', assets)
+    monkeypatch.setattr(cli, 'requires', lambda name: [])
+    monkeypatch.setattr(cli, 'distribution', lambda name: SimpleNamespace(files=[]))
+    destination = tmp_path / 'context'
+    destination.mkdir()
+    cli._build_context(destination)
+    assert (destination / 'entrypoint.sh').read_bytes() == b'#!/bin/bash\nexit 0\n'
+
+
 def _running():
     return {
         "Config": {"Labels": {cli.OWNER: "true"}},

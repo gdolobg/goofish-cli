@@ -114,7 +114,8 @@ def _build_context(destination: Path) -> str:
     )
     (destination / "package" / "pyproject.toml").write_text(project)
     for name in ("Dockerfile", "entrypoint.sh"):
-        shutil.copyfile(ASSETS / name, destination / name)
+        # Windows checkouts may use CRLF; Linux shebangs require LF.
+        (destination / name).write_bytes((ASSETS / name).read_bytes().replace(b"\r\n", b"\n"))
     digest = hashlib.sha256()
     for path in sorted(destination.rglob("*")):
         if path.is_file():

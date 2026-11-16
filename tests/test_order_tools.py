@@ -104,6 +104,9 @@ async def test_create_guards_and_receipt(tmp_path, monkeypatch, total, sku, expe
         state['key'] = {'result': {}}
     page = MagicMock()
     page.context.route = AsyncMock()
+    page.context.new_page = AsyncMock(return_value=page)
+    page.route = AsyncMock()
+    page.close = AsyncMock()
     page.goto = AsyncMock()
     node = MagicMock()
     node.wait_for = AsyncMock()
@@ -142,4 +145,33 @@ async def test_create_guards_and_receipt(tmp_path, monkeypatch, total, sku, expe
         assert result['order_id'] == '789'
         assert 'payUrl' not in result
         node.click.assert_awaited_once()
-    page.context.route.assert_awaited_once_with('**/*', mod.payment_guard)
+    page.route.assert_awaited_once_with('**/*', mod.payment_guard)
+    page.context.route.assert_not_awaited()
+    page.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_repeated_orders_keep_shared_page_and_close_on_cancel(monkeypatch):
+    import asyncio
+    from contextlib import asynccontextmanager
+    from unittest.mock import MagicMock
+    shared = MagicMock()
+    shared.close = AsyncMock()
+    pages = [MagicMock(), MagicMock()]
+    for page in pages:
+        page.route = AsyncMock()
+        page.close = AsyncMock()
+    shared.context.new_page = AsyncMock(side_effect=pages)
+    @asynccontextmanager
+    async def browser():
+        yield shared
+    monkeypatch.setattr(mod, 'goofish_page', browser)
+    async with mod.unpaid_page() as first:
+        assert first is pages[0]
+    with pytest.raises(asyncio.CancelledError):
+        async with mod.unpaid_page() as second:
+            assert second is pages[1]
+            raise asyncio.CancelledError()
+    for page in pages:
+        page.close.assert_awaited_once()
+    shared.close.assert_not_awaited()

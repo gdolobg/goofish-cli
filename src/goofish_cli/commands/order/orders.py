@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import re
+from contextlib import asynccontextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -74,6 +75,19 @@ async def payment_guard(route):
         await route.abort()
     else:
         await route.continue_()
+
+
+@asynccontextmanager
+async def unpaid_page():
+    async with goofish_page() as shared:
+        page = await shared.context.new_page()
+        try:
+            # Page-local routing leaves the sandbox's persistent page untouched.
+            await page.route('**/*', payment_guard)
+            yield page
+        finally:
+            # Closing the temporary page stops payment timers and removes its routes.
+            await page.close()
 
 
 async def render_after(page, action):
@@ -172,8 +186,7 @@ def create_unpaid(item_id: str, sku_id: str, address_id: str, quantity: int,
 
 
 async def _create(item_id, sku_id, address_id, quantity, limit, key):
-    async with goofish_page() as page:
-        await page.context.route('**/*', payment_guard)
+    async with unpaid_page() as page:
         data = await open_order(page, item_id)
         await page.locator(ADDRESS).first.wait_for()
         selected = next((s for s in sku_choices(data) if s['sku_id'] == sku_id), None)
