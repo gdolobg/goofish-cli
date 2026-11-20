@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261120] (2026-11-20)
+
+### Maxuria distribution
+
+- Automatically start Docker Desktop and the sandbox when connecting to `goofish sandbox mcp`.
+- Restore the Windows user environment to prevent missing `ProgramData` errors; launch Docker independently so it survives MCP disconnection.
+- Reuse running containers and keep startup output off the MCP protocol stream.
+- Verified Windows cold and warm startup, login refresh, keyword search, pagination, empty results and item details.
+
 ## [0.6.3](https://github.com/fancyboi999/goofish-cli/compare/v0.6.2...v0.6.3) (2026-10-26)
 
 

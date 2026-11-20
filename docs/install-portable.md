@@ -1,7 +1,7 @@
 # 其他机器安装（含独立桌面沙盒）
 
-此包为 Maxuria 本地分发版本 `0.6.3+maxuria.20261116`，不是上游 PyPI 正式发布。
-包含下单工具、沙盒页面清理和 Windows 入口脚本换行修复。
+此包为 Maxuria 本地分发版本 `0.6.3+maxuria.20261120`，不是上游 PyPI 正式发布。
+包含此前的沙盒与下单工具，以及 MCP 连接时自动启动 Docker Desktop 和沙盒。Windows 启动会恢复完整用户环境，避免 ProgramData 缺失，并使 Docker 独立于 MCP 客户端运行。
 
 ## 环境要求
 
@@ -21,7 +21,7 @@
 ```powershell
 py -3.12 -m venv C:\tools\goofish\.venv
 $python = 'C:\tools\goofish\.venv\Scripts\python.exe'
-& $python -m pip install .\goofish_cli-0.6.3+maxuria.20261116-py3-none-any.whl
+& $python -m pip install .\goofish_cli-0.6.3+maxuria.20261120-py3-none-any.whl
 $goofish = 'C:\tools\goofish\.venv\Scripts\goofish.exe'
 & $goofish sandbox --help
 & $goofish skills install --list
@@ -33,12 +33,12 @@ $goofish = 'C:\tools\goofish\.venv\Scripts\goofish.exe'
 
 ```sh
 python3 -m venv "$HOME/.local/share/goofish-venv"
-"$HOME/.local/share/goofish-venv/bin/python" -m pip install ./goofish_cli-0.6.3+maxuria.20261116-py3-none-any.whl
+"$HOME/.local/share/goofish-venv/bin/python" -m pip install ./goofish_cli-0.6.3+maxuria.20261120-py3-none-any.whl
 GOOFISH="$HOME/.local/share/goofish-venv/bin/goofish"
 "$GOOFISH" sandbox --help
 ```
 
-Linux 无桌面主机可使用 Docker Engine。Windows/Mac 安装 Docker Desktop 后保持它运行。
+Linux 无桌面主机可使用 Docker Engine。Windows/Mac 安装 Docker Desktop 后，连接 MCP 时可自动启动；手动执行 sandbox start/login 前仍需先启动 Docker。
 
 ## 启动与独立扫码登录
 
@@ -65,7 +65,7 @@ Codex 的 config.toml 示例（修改已有条目，不要重复添加）：
 [mcp_servers.goofish]
 command = 'C:\tools\goofish\.venv\Scripts\goofish.exe'
 args = ["sandbox", "mcp"]
-startup_timeout_sec = 60
+startup_timeout_sec = 180
 tool_timeout_sec = 180
 ```
 
@@ -76,7 +76,7 @@ tool_timeout_sec = 180
 ```
 
 Mac/Linux 替换为实际 goofish 可执行文件路径。不要将 noVNC 链接填入 MCP URL。
-MCP 不会自动构建或启动容器，重连前先执行 sandbox start。
+MCP 会检测 Docker 并自动启动沙盒，首次连接可能构建镜像。Windows/macOS 可自动启动 Docker Desktop（等待最多 120 秒）；Linux 需先启动 Docker Engine。首次构建可能超过客户端启动超时，建议预先运行 sandbox start。MCP 断开后 Docker 和沙盒继续运行。
 
 ## 配套技能
 
