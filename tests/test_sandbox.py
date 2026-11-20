@@ -115,38 +115,17 @@ def test_public_viewer_binding_is_rejected_before_start(monkeypatch):
     assert "127.0.0.1" in result.output
 
 
-def test_mcp_transport_has_no_stdout_banner(monkeypatch):
-    monkeypatch.setattr(cli, "_inspect", lambda *a: _running())
-    monkeypatch.setattr(cli, "_ensure_docker", lambda: None)
-    monkeypatch.setattr(cli, "_ready", lambda *a: None)
+def test_mcp_starts_local_proxy_without_docker(monkeypatch):
+    from goofish_cli.sandbox import mcp_proxy
+
     calls = []
-
-    def docker(*args, **kwargs):
-        calls.append(args)
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(cli, "_docker", docker)
+    monkeypatch.setattr(mcp_proxy, "main", lambda: calls.append("proxy"))
+    monkeypatch.setattr(cli, "_ensure_docker", lambda: pytest.fail("连接阶段不能启动 Docker"))
+    monkeypatch.setattr(cli, "_docker", lambda *a, **kw: pytest.fail("连接阶段不能执行 Docker"))
     result = runner.invoke(app, ["sandbox", "mcp"])
     assert result.exit_code == 0
     assert result.stdout == ""
-    assert calls == [("exec", "-i", cli.CONTAINER, "goofish-cli")]
-
-
-def test_mcp_bootstraps_before_connecting(monkeypatch):
-    calls = []
-    monkeypatch.setattr(cli, "_ensure_docker", lambda: calls.append("docker"))
-
-    def start(**kwargs):
-        calls.append("sandbox")
-        typer.echo("viewer link")
-
-    monkeypatch.setattr(cli, "start", start)
-    monkeypatch.setattr(cli, "_docker", lambda *a, **kw: calls.append("mcp") or SimpleNamespace(returncode=0))
-    result = runner.invoke(app, ["sandbox", "mcp"])
-    assert result.exit_code == 0
-    assert calls == ["docker", "sandbox", "mcp"]
-    assert result.stdout == ""
-    assert "viewer link" in result.stderr
+    assert calls == ["proxy"]
 
 
 def test_docker_already_running_skips_launch(monkeypatch):

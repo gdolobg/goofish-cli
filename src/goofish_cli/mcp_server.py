@@ -39,7 +39,7 @@ def _register_all() -> None:
         _register_one(cmd)
 
 
-def _register_one(cmd) -> None:
+def _register_one(cmd, server=None) -> None:
     """把一条 registry Command 注册为 MCP tool，保留参数签名。
 
     handler 是 async（FastMCP 要求），但 registry 里的 cmd.func 是同步函数——
@@ -69,7 +69,7 @@ def _register_one(cmd) -> None:
     # 输入沿用业务签名，输出是适配器的统一包裹，不能声明成业务层的 list。
     handler.__signature__ = sig.replace(return_annotation=dict[str, Any])  # type: ignore[attr-defined]
 
-    mcp.tool(name=tool_name, description=doc)(handler)
+    (server if server is not None else mcp).tool(name=tool_name, description=doc)(handler)
 
 
 def main() -> None:

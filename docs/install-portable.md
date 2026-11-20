@@ -1,7 +1,7 @@
 # 其他机器安装（含独立桌面沙盒）
 
 此包为 Maxuria 本地分发版本 `0.6.3+maxuria.20261120`，不是上游 PyPI 正式发布。
-包含此前的沙盒与下单工具，以及 MCP 连接时自动启动 Docker Desktop 和沙盒。Windows 启动会恢复完整用户环境，避免 ProgramData 缺失，并使 Docker 独立于 MCP 客户端运行。
+包含此前的沙盒与下单工具，以及 首次 MCP 工具调用时自动启动 Docker Desktop 和沙盒。Windows 启动会恢复完整用户环境，避免 ProgramData 缺失，并使 Docker 独立于 MCP 客户端运行。
 
 ## 环境要求
 
@@ -38,7 +38,7 @@ GOOFISH="$HOME/.local/share/goofish-venv/bin/goofish"
 "$GOOFISH" sandbox --help
 ```
 
-Linux 无桌面主机可使用 Docker Engine。Windows/Mac 安装 Docker Desktop 后，连接 MCP 时可自动启动；手动执行 sandbox start/login 前仍需先启动 Docker。
+Linux 无桌面主机可使用 Docker Engine。Windows/Mac 安装 Docker Desktop 后，首次调用 MCP 工具时可自动启动；手动执行 sandbox start/login 前仍需先启动 Docker。
 
 ## 启动与独立扫码登录
 
@@ -76,7 +76,7 @@ tool_timeout_sec = 180
 ```
 
 Mac/Linux 替换为实际 goofish 可执行文件路径。不要将 noVNC 链接填入 MCP URL。
-MCP 会检测 Docker 并自动启动沙盒，首次连接可能构建镜像。Windows/macOS 可自动启动 Docker Desktop（等待最多 120 秒）；Linux 需先启动 Docker Engine。首次构建可能超过客户端启动超时，建议预先运行 sandbox start。MCP 断开后 Docker 和沙盒继续运行。
+MCP 连接与列出工具不启动 Docker，首次实际调用工具时才检测 Docker 并自动启动沙盒，首次工具调用可能构建镜像。Windows/macOS 可自动启动 Docker Desktop（等待最多 120 秒）；Linux 需先启动 Docker Engine。首次构建可能超过客户端工具调用超时，建议预先运行 sandbox start。MCP 断开后 Docker 和沙盒继续运行。
 
 ## 配套技能
 

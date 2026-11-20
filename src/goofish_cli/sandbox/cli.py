@@ -10,7 +10,6 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import redirect_stdout
 from importlib.metadata import distribution, requires
 from pathlib import Path
 from typing import Annotated
@@ -409,13 +408,10 @@ def browse(
 
 @app.command()
 def mcp():
-    """通过 stdio 连接沙箱内 MCP server；客户端使用 goofish sandbox mcp。"""
+    """提供本机 MCP 入口，首次工具调用时启动 Docker 和沙箱。"""
     _host_only()
     if sys.stdin.isatty():
         _fail("MCP 是 stdio 服务；请在 MCP 客户端中配置 goofish sandbox mcp。", 2)
-    _ensure_docker()
-    # MCP stdout 只允许协议消息；沙箱启动链接与进度写入 stderr。
-    with redirect_stdout(sys.stderr):
-        start(port=16080, rebuild=False)
-    result = _docker("exec", "-i", CONTAINER, "goofish-cli", check=False)
-    raise typer.Exit(result.returncode)
+    from goofish_cli.sandbox.mcp_proxy import main
+
+    main()
