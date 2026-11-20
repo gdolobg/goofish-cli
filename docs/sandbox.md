@@ -1,6 +1,6 @@
 # 独立桌面沙箱
 
-沙箱把整个 goofish CLI/MCP 放进本机 Docker 容器。有窗口的 Chromium 在虚拟桌面里运行，搜索、详情、扫码登录和登录态刷新不会在宿主机弹出浏览器窗口，也不接管已有标签页。Docker 不可用或沙箱停止时，命令直接失败，不会回退到本机浏览器。
+沙箱把整个 goofish CLI/MCP 放进本机 Docker 容器。有窗口的 Chromium 在虚拟桌面里运行，搜索、详情、扫码登录和登录态刷新不会在宿主机弹出浏览器窗口，也不接管已有标签页。`sandbox mcp` 连接时会自动检查 Docker 并启动沙箱：Windows/macOS 可自动启动 Docker Desktop（最多等待 120 秒）；Windows 会恢复完整用户环境并通过 WMI 独立启动，MCP 断开后 Docker 和沙箱继续运行，Linux 需手动启动 Docker Engine。首次连接可能构建镜像；若客户端启动超时，请等待构建结束后重新连接，或提前执行 `goofish sandbox start`。其他沙箱命令仍要求 Docker 已运行；任何失败都不会回退到本机浏览器。
 
 需要 Python 3.11+、运行中的本机 Docker Desktop / Docker Engine，以及首次构建镜像时的网络连接。首次会下载 Playwright Ubuntu 镜像和桌面依赖；默认容器资源上限为 3 CPU、3 GB 内存，另有 1 GB 共享内存上限。运行 Chromium 的兼容性仍取决于平台响应，沙箱不保证通过登录或风控验证。
 
@@ -110,7 +110,7 @@ goofish sandbox start --rebuild
 | 现象 | 处理 |
 |---|---|
 | `sandbox` 命令不存在 | 更新到包含沙箱功能的版本，或从已合并源码安装；确认客户端调用的是同一个可执行文件 |
-| Docker 不可用 / 沙箱未运行 | 启动 Docker，在终端执行 `goofish sandbox start`；不会回退到本机浏览器 |
+| Docker 不可用 / 沙箱未运行 | `sandbox mcp` 自动尝试启动；其他命令请先启动 Docker，再执行 `goofish sandbox start`。自动启动失败时检查 Docker Desktop 或手动启动 Docker Engine |
 | MCP 找不到命令 | 使用 `goofish` 绝对路径，并检查客户端进程的 Docker PATH |
 | 账号与 CLI 登录态不同 | 在沙箱内执行 `goofish sandbox login` 重新登录；不会混用账号 |
 | 浏览器任务忙碌 | 完成正在运行的任务或人工验证，再发起下一次浏览器任务 |

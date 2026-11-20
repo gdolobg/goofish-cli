@@ -117,6 +117,8 @@ def test_public_viewer_binding_is_rejected_before_start(monkeypatch):
 
 def test_mcp_transport_has_no_stdout_banner(monkeypatch):
     monkeypatch.setattr(cli, "_inspect", lambda *a: _running())
+    monkeypatch.setattr(cli, "_ensure_docker", lambda: None)
+    monkeypatch.setattr(cli, "_ready", lambda *a: None)
     calls = []
 
     def docker(*args, **kwargs):
@@ -128,6 +130,69 @@ def test_mcp_transport_has_no_stdout_banner(monkeypatch):
     assert result.exit_code == 0
     assert result.stdout == ""
     assert calls == [("exec", "-i", cli.CONTAINER, "goofish-cli")]
+
+
+def test_mcp_bootstraps_before_connecting(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cli, "_ensure_docker", lambda: calls.append("docker"))
+
+    def start(**kwargs):
+        calls.append("sandbox")
+        typer.echo("viewer link")
+
+    monkeypatch.setattr(cli, "start", start)
+    monkeypatch.setattr(cli, "_docker", lambda *a, **kw: calls.append("mcp") or SimpleNamespace(returncode=0))
+    result = runner.invoke(app, ["sandbox", "mcp"])
+    assert result.exit_code == 0
+    assert calls == ["docker", "sandbox", "mcp"]
+    assert result.stdout == ""
+    assert "viewer link" in result.stderr
+
+
+def test_docker_already_running_skips_launch(monkeypatch):
+    monkeypatch.setattr(cli, "_docker_ready", lambda: True)
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **kw: pytest.fail("不应重复启动"))
+    cli._ensure_docker()
+
+
+def test_windows_docker_launch_waits_until_ready(monkeypatch):
+    states = iter([False, False, True])
+    monkeypatch.setattr(cli, "_docker_ready", lambda: next(states))
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli, "_windows_desktop_environment", lambda: {"ProgramData": "C:/ProgramData"})
+    monkeypatch.setattr(cli.Path, "is_file", lambda self: True)
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    calls = []
+    monkeypatch.setattr(cli.subprocess, "run", lambda command, **kw: calls.append(kw["env"]["GOOFISH_DOCKER_DESKTOP"]) or SimpleNamespace(returncode=0))
+    cli._ensure_docker()
+    assert len(calls) == 1
+    assert calls[0].endswith("Docker Desktop.exe")
+
+
+def test_docker_start_timeout_stops_connection(monkeypatch):
+    monkeypatch.setattr(cli, "_docker_ready", lambda: False)
+    monkeypatch.setattr(cli.sys, "platform", "darwin")
+    monkeypatch.setattr(cli.subprocess, "Popen", lambda *a, **kw: None)
+    ticks = iter([0, 121])
+    monkeypatch.setattr(cli.time, "monotonic", lambda: next(ticks))
+    with pytest.raises(typer.Exit):
+        cli._ensure_docker()
+
+
+def test_windows_docker_uses_independent_process(monkeypatch):
+    states = iter([False, True])
+    monkeypatch.setattr(cli, "_docker_ready", lambda: next(states))
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli, "_windows_desktop_environment", lambda: {"ProgramData": "C:/ProgramData"})
+    monkeypatch.setattr(cli.Path, "is_file", lambda self: True)
+    calls = []
+    monkeypatch.setattr(cli.subprocess, "run", lambda args, **kw: calls.append((args, kw)) or SimpleNamespace(returncode=0))
+    cli._ensure_docker()
+    args, options = calls[0]
+    assert "Win32_Process" in args[-1]
+    assert "EnvironmentVariables" in args[-1]
+    assert options["env"]["GOOFISH_DOCKER_DESKTOP"].endswith("Docker Desktop.exe")
+    assert options["creationflags"] == 0x08000000
 
 
 def test_interactive_mcp_does_not_start_docker(monkeypatch):

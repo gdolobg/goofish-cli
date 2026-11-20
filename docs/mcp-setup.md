@@ -167,7 +167,7 @@ args = ["sandbox", "mcp"]
 
 桌面客户端找不到 `goofish` 时，将 `command` 改为终端中 `command -v goofish` 输出的绝对路径；同时确保客户端 PATH 中能找到 `docker`。源码安装尚未发布时，使用该源码环境内的 `goofish` 路径。
 
-更新配置后重新连接 MCP 或新建客户端会话。先调用 `auth_status`，应返回 `ok=true` 且 `valid=true`；然后调用 `search_items` 和 `item_get`/`item_view`。`sandbox mcp` 不负责构建或启动容器，容器停止时会明确失败，不会改用本机浏览器。
+更新配置后重新连接 MCP 或新建客户端会话。先调用 `auth_status`，应返回 `ok=true` 且 `valid=true`；然后调用 `search_items` 和 `item_get`/`item_view`。`sandbox mcp` 会先检查 Docker：Windows/macOS 上未就绪时尝试启动 Docker Desktop，最多等待 120 秒；随后自动启动沙箱，首次连接会构建镜像。Linux 需预先启动 Docker Engine。启动进度写入 stderr，不会改用本机浏览器。首次构建可能超过客户端的 MCP 启动超时，建议提前执行 `goofish sandbox start`，或在构建完成后重新连接。
 
 平台要求验证时，在终端执行 `goofish sandbox browse --item-id <商品ID>`，由用户在同一虚拟桌面完成验证。升级 CLI 后，执行 `goofish sandbox stop`、`goofish sandbox start --rebuild`，再重新连接客户端，原状态卷保留。完整的端口、状态保存、uvx 和常见问题见[沙箱指南](sandbox.md)。
 

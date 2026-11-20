@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import redirect_stdout
 from importlib.metadata import distribution, requires
 from pathlib import Path
 from typing import Annotated
@@ -59,6 +60,99 @@ def _inspect(kind: str, name: str):
             return None
         _fail("无法访问 Docker。请确认本机 Docker 服务已启动。")
     return json.loads(result.stdout)[0]
+
+
+def _docker_ready() -> bool:
+    try:
+        return subprocess.run(
+            ["docker", "info"], stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=5, check=False,
+        ).returncode == 0
+    except FileNotFoundError:
+        _fail("找不到 Docker。请先安装 Docker Desktop，并确保 docker 在 PATH 中。")
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def _windows_desktop_environment() -> dict[str, str]:
+    """MCP 白名单环境不包含 Docker Desktop 所需的全部 Windows 变量。"""
+    import ctypes
+    from ctypes import wintypes
+
+    token = wintypes.HANDLE()
+    block = ctypes.c_void_p()
+    if not ctypes.windll.advapi32.OpenProcessToken(
+        wintypes.HANDLE(-1), 0x0008 | 0x0002, ctypes.byref(token)  # TOKEN_QUERY | TOKEN_DUPLICATE
+    ):
+        _fail("无法读取 Windows 用户环境，请手动启动 Docker Desktop。")
+    try:
+        if not ctypes.windll.userenv.CreateEnvironmentBlock(ctypes.byref(block), token, False):
+            _fail("无法恢复 Windows 用户环境，请手动启动 Docker Desktop。")
+        try:
+            environment = {}
+            address = block.value
+            while entry := ctypes.wstring_at(address):
+                key, separator, value = entry.partition("=")
+                if key and separator:
+                    environment[key] = value
+                address += (len(entry) + 1) * ctypes.sizeof(ctypes.c_wchar)
+            for key, value in os.environ.items():
+                for existing in list(environment):
+                    if existing.upper() == key.upper():
+                        del environment[existing]
+                environment[key] = value
+            return environment
+        finally:
+            ctypes.windll.userenv.DestroyEnvironmentBlock(block)
+    finally:
+        ctypes.windll.kernel32.CloseHandle(token)
+
+
+def _ensure_docker() -> None:
+    if _docker_ready():
+        return
+    if sys.platform == "win32":
+        candidates = [
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Docker/Docker/Docker Desktop.exe",
+            Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/DockerDesktop/Docker Desktop.exe",
+        ]
+        executable = next((path for path in candidates if path.is_file()), None)
+        if executable is None:
+            _fail("未找到 Docker Desktop，请手动启动后重新连接 MCP。")
+        command = [str(executable)]
+    elif sys.platform == "darwin":
+        command = ["open", "-g", "-a", "Docker"]
+    else:
+        _fail("Docker 服务未就绪，请手动启动 Docker Engine 后重新连接 MCP。")
+    typer.echo("正在启动 Docker Desktop，等待 Docker 服务就绪……", err=True)
+    try:
+        if sys.platform == "win32":
+            # WMI 创建独立进程，避免 MCP 客户端关闭 Job 时终止 Docker。
+            environment = _windows_desktop_environment()
+            environment["GOOFISH_DOCKER_DESKTOP"] = str(executable)
+            powershell = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+            result = subprocess.run(
+                [str(powershell), "-NoProfile", "-NonInteractive", "-Command",
+                 "$ErrorActionPreference='Stop'; "
+                 "$startup=([wmiclass]'Win32_ProcessStartup').CreateInstance(); "
+                 "$startup.EnvironmentVariables=[string[]](Get-ChildItem Env: | ForEach-Object { $_.Name+'='+$_.Value }); "
+                 "$result=([wmiclass]'Win32_Process').Create([char]34+$env:GOOFISH_DOCKER_DESKTOP+[char]34, $null, $startup); "
+                 "if($result.ReturnValue -ne 0){throw ('Docker launch failed: '+$result.ReturnValue)}"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+                env=environment, creationflags=0x08000000, timeout=15, check=False,
+            )
+            if result.returncode:
+                _fail(f"无法通过 Windows WMI 启动 Docker Desktop：{result.stderr.strip()}")
+        else:
+            subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _fail(f"无法启动 Docker Desktop：{exc}")
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        if _docker_ready():
+            return
+        time.sleep(1)
+    _fail("等待 Docker Desktop 就绪超时，请检查 Docker Desktop 后重新连接 MCP。")
 
 
 def _container():
@@ -319,6 +413,9 @@ def mcp():
     _host_only()
     if sys.stdin.isatty():
         _fail("MCP 是 stdio 服务；请在 MCP 客户端中配置 goofish sandbox mcp。", 2)
-    _require_running()
+    _ensure_docker()
+    # MCP stdout 只允许协议消息；沙箱启动链接与进度写入 stderr。
+    with redirect_stdout(sys.stderr):
+        start(port=16080, rebuild=False)
     result = _docker("exec", "-i", CONTAINER, "goofish-cli", check=False)
     raise typer.Exit(result.returncode)
