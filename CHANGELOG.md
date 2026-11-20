@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261120.1] (2026-11-20)
+
+### Maxuria distribution
+
+- Defer Docker Desktop and sandbox startup until the first MCP tool call; connecting and listing tools no longer starts Docker.
+- Serve tool schemas locally and forward actual calls to the sandbox, preserving structured results and errors without retrying write operations.
+- Verified 51 related tests and Windows cold first-call startup, warm cross-page search, and container reuse.
+
 ## [0.6.3+maxuria.20261120] (2026-11-20)
 
 ### Maxuria distribution
