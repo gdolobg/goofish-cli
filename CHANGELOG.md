@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261123] (2026-11-23)
+
+### Maxuria distribution
+
+- Record per-stage MCP call timings to stderr and local JSONL files, with exception tracebacks and no tool arguments or results in timing records.
+- Use UTF-8 for Windows sandbox MCP pipes to preserve Chinese startup output.
+- Fix Windows permission, lock-file lifecycle and UTF-8 metadata test assumptions; all 334 Python tests pass on Windows.
+
 ## [0.6.3+maxuria.20261120.1] (2026-11-20)
 
 ### Maxuria distribution
