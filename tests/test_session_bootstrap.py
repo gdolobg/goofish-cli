@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import json
+import os
+from unittest.mock import Mock
 
 import pytest
 
@@ -65,8 +67,9 @@ def test_load_bootstraps_when_missing(fake_cookies_path, monkeypatch):
     # v2 持久化为 list[Record]；legacy flat 走 _coerce_records → domain=''
     assert {r["name"]: r["value"] for r in data} == fake
     assert all(r["domain"] == "" for r in data)
-    # 文件权限 0o600
-    assert (fake_cookies_path.stat().st_mode & 0o777) == 0o600
+    # Windows 的 stat 不反映 POSIX 用户组权限位。
+    if os.name != "nt":
+        assert (fake_cookies_path.stat().st_mode & 0o777) == 0o600
 
     # 第二次 load 应命中缓存，不再调 bootstrap
     s2 = session_mod.Session.load()
@@ -131,8 +134,12 @@ def test_load_raises_when_bootstrap_fail_does_not_write(fake_cookies_path, monke
     assert not fake_cookies_path.exists()
 
 
-def test_write_cookies_json_format(tmp_path):
+def test_write_cookies_json_format(tmp_path, monkeypatch):
     """write_cookies_json 应写加密格式，解密后内容正确。"""
+    from goofish_cli.core import local_state
+
+    chmod = Mock(wraps=local_state.os.chmod)
+    monkeypatch.setattr(local_state.os, "chmod", chmod)
     target = tmp_path / "out.json"
     session_mod.write_cookies_json(target, {"a": "1", "b": "2"})
     raw = target.read_bytes()
@@ -142,7 +149,10 @@ def test_write_cookies_json_format(tmp_path):
     # 解密后内容正确（v2 持久化为 list[Record]，flat dict 经 _coerce_records 转 records）
     data = decrypt_cookies(raw)
     assert {r["name"]: r["value"] for r in data} == {"a": "1", "b": "2"}
-    assert (target.stat().st_mode & 0o777) == 0o600
+    # 所有平台都验证写入时请求 0600；实际权限位仅在 POSIX 上检查。
+    assert any(call.args[1] == 0o600 for call in chmod.call_args_list)
+    if os.name != "nt":
+        assert (target.stat().st_mode & 0o777) == 0o600
 
 
 def test_cookie_records_preserves_domain_from_bootstrap(tmp_path, monkeypatch):
