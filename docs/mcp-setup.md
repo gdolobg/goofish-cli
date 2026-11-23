@@ -172,3 +172,9 @@ args = ["sandbox", "mcp"]
 平台要求验证时，在终端执行 `goofish sandbox browse --item-id <商品ID>`，由用户在同一虚拟桌面完成验证。升级 CLI 后，执行 `goofish sandbox stop`、`goofish sandbox start --rebuild`，再重新连接客户端，原状态卷保留。完整的端口、状态保存、uvx 和常见问题见[沙箱指南](sandbox.md)。
 
 OpenClaw bundle 的默认 `.mcp.json` 仍是本机模式，本次没有增加 bundle 沙箱开关；不要把安装 bundle 等同于启用沙箱。
+
+### 沙箱 MCP 诊断日志
+
+`goofish sandbox mcp` 将每次工具调用的耗时写入 stderr，并追加到本机 `~/.goofish-cli/logs/mcp-timing-<UTC日期>-<进程ID>.jsonl`。记录包含调用 ID、工具名、结果状态，以及等待锁、准备沙箱、建立传输、初始化、调用工具和清理各阶段的耗时（毫秒）。日志不记录工具参数或返回内容；失败时 stderr 另有异常堆栈，写入日志失败不会覆盖原始调用结果。
+
+Windows 下 MCP 标准输出与错误输出统一使用 UTF-8，避免系统默认 GBK 导致中文启动日志解码失败。诊断文件按日期和进程分开保存，不会自动清理，可按需删除旧文件。
