@@ -1,5 +1,8 @@
 # 独立桌面沙箱
 
+已有安装可使用 `goofish update` 升级 CLI 并重建沙盒，保留登录态数据卷。
+详见[升级说明](update.md)。旧版本没有此命令时，需先手动安装一次新版 wheel。
+
 沙箱把 goofish 业务执行和浏览器放进本机 Docker 容器，MCP 轻量入口运行在宿主机。有窗口的 Chromium 在虚拟桌面里运行，搜索、详情、扫码登录和登录态刷新不会在宿主机弹出浏览器窗口，也不接管已有标签页。`sandbox mcp` 在本机提供轻量入口，连接与列出工具时不访问 Docker；第一次调用工具时自动检查 Docker 并启动沙箱：Windows/macOS 可自动启动 Docker Desktop（最多等待 120 秒）；Windows 会恢复完整用户环境并通过 WMI 独立启动，MCP 断开后 Docker 和沙箱继续运行，Linux 需手动启动 Docker Engine。首次工具调用可能构建镜像；若首次工具调用超时，请等待构建结束后重新连接，或提前执行 `goofish sandbox start`。其他沙箱命令仍要求 Docker 已运行；任何失败都不会回退到本机浏览器。
 
 需要 Python 3.11+、运行中的本机 Docker Desktop / Docker Engine，以及首次构建镜像时的网络连接。首次会下载 Playwright Ubuntu 镜像和桌面依赖；默认容器资源上限为 3 CPU、3 GB 内存，另有 1 GB 共享内存上限。运行 Chromium 的兼容性仍取决于平台响应，沙箱不保证通过登录或风控验证。

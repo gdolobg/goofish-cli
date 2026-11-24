@@ -111,6 +111,14 @@ def version_cmd():
     print(f"goofish-cli {__version__}")
 
 
+@app.command(name="update")
+def update_cmd():
+    """升级 Maxuria 分发版及已有沙盒，保留沙盒登录态。"""
+    from goofish_cli.updater import update
+
+    update()
+
+
 @app.command(name="list-commands")
 def list_commands(format: str = Format.TABLE.value):  # noqa: A002
     """列出所有已注册命令（调试用）。"""
