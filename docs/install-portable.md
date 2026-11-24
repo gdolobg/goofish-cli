@@ -1,6 +1,6 @@
 # 其他机器安装（含独立桌面沙盒）
 
-此包为 Maxuria 本地分发版本 `0.6.3+maxuria.20261123`，不是上游 PyPI 正式发布。
+此包为 Maxuria 本地分发版本 `0.6.3+maxuria.20261124`，不是上游 PyPI 正式发布。
 包含此前的沙盒与下单工具，以及 首次 MCP 工具调用时自动启动 Docker Desktop 和沙盒。Windows 启动会恢复完整用户环境，避免 ProgramData 缺失，并使 Docker 独立于 MCP 客户端运行。
 
 ## 环境要求
@@ -21,7 +21,7 @@
 ```powershell
 py -3.12 -m venv C:\tools\goofish\.venv
 $python = 'C:\tools\goofish\.venv\Scripts\python.exe'
-& $python -m pip install .\goofish_cli-0.6.3+maxuria.20261123-py3-none-any.whl
+& $python -m pip install .\goofish_cli-0.6.3+maxuria.20261124-py3-none-any.whl
 $goofish = 'C:\tools\goofish\.venv\Scripts\goofish.exe'
 & $goofish sandbox --help
 & $goofish skills install --list
@@ -33,7 +33,7 @@ $goofish = 'C:\tools\goofish\.venv\Scripts\goofish.exe'
 
 ```sh
 python3 -m venv "$HOME/.local/share/goofish-venv"
-"$HOME/.local/share/goofish-venv/bin/python" -m pip install ./goofish_cli-0.6.3+maxuria.20261123-py3-none-any.whl
+"$HOME/.local/share/goofish-venv/bin/python" -m pip install ./goofish_cli-0.6.3+maxuria.20261124-py3-none-any.whl
 GOOFISH="$HOME/.local/share/goofish-venv/bin/goofish"
 "$GOOFISH" sandbox --help
 ```

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261124] (2026-11-24)
+
+### Maxuria distribution
+
+- Add `goofish sandbox logout` and the MCP tool `auth_logout` to clear sandbox browser cookies, related site storage, login files and session snapshots.
+- Reject logout on the host or while a sandbox browser task holds the session lock. Logging in again requires a fresh QR login.
+- Keep non-sandbox logout unsupported.
+
 ## [0.6.3+maxuria.20261123] (2026-11-23)
 
 ### Maxuria distribution

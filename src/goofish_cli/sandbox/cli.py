@@ -328,6 +328,20 @@ def stop():
 
 
 @app.command()
+def logout():
+    """清除沙箱浏览器和持久化登录态。"""
+    _host_only()
+    _require_running()
+    result = _docker(
+        "exec", CONTAINER, "goofish", "auth", "logout", "--format", "json",
+        capture=True, check=False, stream_errors=True,
+    )
+    if result.returncode:
+        _fail("沙箱退出登录失败，请检查沙箱状态后重试。", result.returncode)
+    typer.echo("沙箱登录态已清除；下次使用需要重新扫码登录。")
+
+
+@app.command()
 def login(timeout: Annotated[int, typer.Option(min=30, max=3600)] = 600):
     """在沙箱内扫码登录；用户通过观察链接操作，登录态不导回宿主机。"""
     _host_only()

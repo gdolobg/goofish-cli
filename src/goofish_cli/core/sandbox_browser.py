@@ -29,6 +29,39 @@ ROOT = Path.home() / ".goofish-cli"
 STATE_PATH = ROOT / "desktop-session.enc"
 
 
+async def clear_login() -> None:
+    """与浏览器任务互斥，防止旧会话在清除后回写。"""
+    ROOT.mkdir(parents=True, exist_ok=True)
+    try:
+        with FileLock(ROOT / "desktop-browser.lock", timeout=0, mode=0o600):
+            source = resolve_cookie_path().resolve()
+            source.parent.mkdir(parents=True, exist_ok=True)
+            with FileLock(str(source) + ".lock", timeout=5, mode=0o600):
+                async with async_playwright() as playwright:
+                    browser = await playwright.chromium.connect_over_cdp(ENDPOINT)
+                    context = browser.contexts[0]
+                    # 先停止页面请求，避免清除后页面立即重新写入旧会话。
+                    for page in list(context.pages):
+                        await page.close()
+                    page = await context.new_page()
+                    cdp = await context.new_cdp_session(page)
+                    try:
+                        # 清除相关站点的持久存储；Cookie 在整个沙箱上下文中清除。
+                        for host in (*ALLOWED_HOSTS, "www.goofish.com", "passport.goofish.com", "login.taobao.com"):
+                            for scheme in ("http", "https"):
+                                await cdp.send("Storage.clearDataForOrigin", {
+                                    "origin": f"{scheme}://{host}", "storageTypes": "all",
+                                })
+                        await context.clear_cookies()
+                    finally:
+                        await cdp.detach()
+                source.unlink(missing_ok=True)
+                STATE_PATH.unlink(missing_ok=True)
+                (ROOT / "device.json").unlink(missing_ok=True)
+    except Timeout as exc:
+        raise GoofishError("沙箱正在处理任务或登录态被占用，请完成后再退出登录") from exc
+
+
 def _allowed(cookie: dict) -> bool:
     host = cookie.get("domain", "").lstrip(".")
     return any(host == h or host.endswith("." + h) for h in ALLOWED_HOSTS)

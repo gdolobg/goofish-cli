@@ -20,7 +20,8 @@ async def test_catalog_does_not_start_docker(monkeypatch):
     server = proxy._create_server()
     result = await server.request_handlers[types.ListToolsRequest](types.ListToolsRequest())
     tools = result.root.tools
-    assert len(tools) == 19
+    assert len(tools) == 20
+    assert any(tool.name == "auth_logout" for tool in tools)
     search = next(tool for tool in tools if tool.name == "search_items")
     assert "query" in search.inputSchema["properties"]
 
