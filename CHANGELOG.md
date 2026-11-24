@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261124.2] (2026-11-24)
+
+### Maxuria distribution
+
+- Reuse the sandbox MCP transport and initialized session across tool calls, avoiding repeated Docker preparation and protocol handshakes.
+- Keep SDK contexts on one owner task; close the connection on cancellation or transport failure and reconnect only on a subsequent explicit call, without replaying uncertain operations.
+- Add `session_reused` to MCP timing diagnostics and connection lifecycle regression tests.
+
 ## [0.6.3+maxuria.20261124.1] (2026-11-24)
 
 ### Maxuria distribution
