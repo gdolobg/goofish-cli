@@ -213,6 +213,10 @@ class _SearchPage:
             if "data" not in fields:
                 fields = parse_qs(urlsplit(request.url).query)
             data = json.loads(fields.get("data", ["{}"])[0])
+            if getattr(self, "sort", "default") == "credit" and (
+                data.get("sortField") != "credit" or data.get("sortValue") != "credit_desc"
+            ):
+                return
             if data.get("keyword") == self.query and int(data.get("pageNumber", 0)) == self.number:
                 self.requests[request] = self.generation
         except (ValueError, TypeError, AttributeError):
@@ -392,7 +396,7 @@ async def _walk_pages(
     return fetched_pages, total_pages, stopped_reason
 
 
-async def _run(query: str, limit: int, pages: int) -> dict[str, Any]:
+async def _run(query: str, limit: int, pages: int, sort: str = "default") -> dict[str, Any]:
     url = _build_search_url(query)
 
     items: list[dict[str, Any]] = []
@@ -425,6 +429,17 @@ async def _run(query: str, limit: int, pages: int) -> dict[str, Any]:
 
         assert payload is not None
         _raise_for_failed_page(payload)
+        if sort == "credit":
+            page.sort = sort
+            page.begin(query, 1)
+            await page.evaluate("window.scrollTo(0, 0)")
+            await page.wait_for_timeout(500)
+            await page.locator('[class*="search-select-title"]').first.hover(timeout=5000)
+            await page.wait_for_timeout(500)
+            await page.get_by_text("信用排序", exact=True).click(timeout=5000)
+            await page.wait_for_timeout(PAGE_STABLE_MS)
+            payload = await page.extract()
+            _raise_for_failed_page(payload)
         result_kind = payload.get("result_kind", "unknown")
         reported_match_count = payload.get("reported_match_count")
         recommendations_present = payload.get("recommendations_present", False)
@@ -465,6 +480,7 @@ async def _run(query: str, limit: int, pages: int) -> dict[str, Any]:
         "pages_total": total_pages,
         "stopped_reason": stopped_reason,
         "query": query,
+        "sort": sort,
         "result_kind": result_kind,
         "reported_match_count": reported_match_count,
         "recommendations_present": recommendations_present,
@@ -481,13 +497,15 @@ async def _run(query: str, limit: int, pages: int) -> dict[str, Any]:
 @command(
     namespace="search",
     name="items",
-    description="搜索闲鱼商品（浏览器路径，抗风控；--pages 跨页抓取）",
+    description="搜索闲鱼商品（浏览器路径；pages跨页，sort=default综合或credit信用排序）",
     strategy=Strategy.COOKIE,
     columns=["rank", "item_id", "title", "price", "condition", "brand", "location", "badge", "url"],
 )
-def search(query: str, limit: int = DEFAULT_LIMIT, pages: int = 1) -> dict[str, Any]:
+def search(query: str, limit: int = DEFAULT_LIMIT, pages: int = 1, sort: str = "default") -> dict[str, Any]:
+    if sort not in {"default", "credit"}:
+        raise GoofishError("sort 必须为 default 或 credit")
     q = str(query).strip()
-    result = asyncio.run(_run(q, _normalize_limit(limit), _normalize_pages(pages)))
+    result = asyncio.run(_run(q, _normalize_limit(limit), _normalize_pages(pages), sort))
     result["query"] = q
     return result
 

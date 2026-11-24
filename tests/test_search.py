@@ -333,3 +333,54 @@ def test_walk_pages_non_dict_pagination_state_is_error():
             _walk(FakePage([bad]), [_item("100")], {"100"}, 1, pages=3, limit=200)
         )
         assert (fetched, reason) == (1, "error"), f"bad={bad!r}"
+
+
+def test_search_sort_validation_before_browser():
+    from goofish_cli.commands.search.search import search
+    from goofish_cli.core.errors import GoofishError
+    with pytest.raises(GoofishError, match="sort"):
+        search("phone", sort="unknown")
+
+
+def test_search_passes_sort_and_keeps_default(monkeypatch):
+    import importlib
+    module = importlib.import_module("goofish_cli.commands.search.search")
+    calls = []
+    async def run(query, limit, pages, sort):
+        calls.append((query, limit, pages, sort))
+        return {}
+    monkeypatch.setattr(module, "_run", run)
+    module.search("phone")
+    module.search("phone", limit=150, pages=5, sort="credit")
+    assert calls == [("phone", 20, 1, "default"), ("phone", 150, 5, "credit")]
+
+
+@pytest.mark.parametrize("number", [1, 2, 5])
+def test_credit_capture_rejects_unsorted_requests_on_every_page(number):
+    from goofish_cli.commands.search.search import _SearchPage
+    import json
+    from urllib.parse import urlencode
+    page = object.__new__(_SearchPage)
+    page.sort, page.query, page.number, page.generation = "credit", "phone", number, 7
+    page.requests = {}
+    class Request:
+        url = "https://www.goofish.com/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/"
+        def __init__(self, **fields):
+            self.post_data = urlencode({"data": json.dumps({"keyword": "phone", "pageNumber": number, **fields})})
+    bad = Request(sortField="", sortValue="")
+    page._request(bad)
+    assert not page.requests
+    good = Request(sortField="credit", sortValue="credit_desc")
+    page._request(good)
+    assert page.requests == {good: 7}
+
+
+def test_mcp_existing_search_tool_exposes_sort():
+    from goofish_cli.mcp_server import _register_one
+    from goofish_cli.core.registry import registry
+    from mcp.server.fastmcp import FastMCP
+    server = FastMCP("search-sort-test")
+    _register_one(registry()["search.items"], server)
+    tools = asyncio.run(server.list_tools())
+    schema = next(tool.inputSchema for tool in tools if tool.name == "search_items")
+    assert schema["properties"]["sort"]["default"] == "default"

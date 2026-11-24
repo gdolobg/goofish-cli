@@ -387,3 +387,5 @@ uv run ruff check src tests  # 零告警
 ## 📜 License
 
 Apache-2.0 © 2026 fancy。详见 [LICENSE](./LICENSE) 和 [NOTICE](./NOTICE)。
+
+搜索支持 `goofish search items "iphone duo 正品" --sort credit --pages 5 --limit 150`。MCP 的现有 `search_items` 同样接受 `sort: "credit"`；省略时保持综合排序。信用排序逐页核验实际请求的排序字段，无法确认时返回错误，不以综合结果冒充。
