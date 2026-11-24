@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261124.1] (2026-11-24)
+
+### Maxuria distribution
+
+- Add CLI-only `goofish update` to download and verify the latest Maxuria wheel, upgrade the current Python environment, and rebuild an existing sandbox while preserving its login volume and viewer port.
+- Add verified credit and recent-activity search sorting (`sort=credit` and `sort=active`).
+- Add optional integer-yuan price bounds (`min_price` and `max_price`) to CLI and MCP search, validating the requested filters on every page.
+
 ## [0.6.3+maxuria.20261124] (2026-11-24)
 
 ### Maxuria distribution
