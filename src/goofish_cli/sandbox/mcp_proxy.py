@@ -53,6 +53,69 @@ def _prepare() -> None:
         cli.start(port=16080, rebuild=False)
 
 
+class _SandboxConnection:
+    """One owner task enters, uses and exits SDK contexts (AnyIO task-affinity)."""
+
+    def __init__(self):
+        self.queue = asyncio.Queue()
+        self.task = None
+
+    async def call(self, name, arguments, advance):
+        future = asyncio.get_running_loop().create_future()
+        reused = self.task is not None and not self.task.done()
+        if not reused:
+            if self.task is not None:
+                with suppress(BaseException):
+                    await self.task
+            advance("prepare")
+            self.task = asyncio.create_task(self._serve())
+        await self.queue.put((name, arguments, advance, future))
+        try:
+            return await future, reused
+        except BaseException:
+            # Never replay an uncertain call, including write operations.
+            await self.close()
+            raise
+
+    async def _serve(self):
+        job = await self.queue.get()
+        try:
+            await asyncio.to_thread(_prepare)
+            job[2]("transport")
+            parameters = StdioServerParameters(
+                command="docker", args=["exec", "-i", cli.CONTAINER, "goofish-cli"]
+            )
+            async with (
+                stdio_client(parameters) as (read, write),
+                ClientSession(read, write, read_timeout_seconds=timedelta(minutes=10)) as session,
+            ):
+                job[2]("initialize")
+                await session.initialize()
+                while True:
+                    name, arguments, advance, future = job
+                    advance("call_tool")
+                    result = await session.call_tool(name, arguments)
+                    if not future.done():
+                        future.set_result(result)
+                    job = await self.queue.get()
+        except BaseException as error:
+            future = job[3]
+            if not future.done():
+                if isinstance(error, asyncio.CancelledError):
+                    future.cancel()
+                else:
+                    future.set_exception(error)
+            raise
+
+    async def close(self):
+        task, self.task = self.task, None
+        if task is not None:
+            if not task.done():
+                task.cancel()
+            with suppress(BaseException):
+                await task
+
+
 def _create_server() -> Server:
     catalog = FastMCP("goofish")
     discover()
@@ -60,6 +123,8 @@ def _create_server() -> Server:
         _register_one(command, catalog)
     server = Server("goofish")
     lock = asyncio.Lock()
+    connection = _SandboxConnection()
+    server.sandbox_connection = connection
 
     @server.list_tools()
     async def list_tools():
@@ -67,11 +132,13 @@ def _create_server() -> Server:
 
     @server.call_tool()
     async def call_tool(name, arguments):
-        # 每次确认运行状态，支持用户在两次工具调用之间关闭 Docker。
+        # First call prepares Docker; later calls reuse the live session. A broken
+        # connection fails this call; only a subsequent explicit call reconnects.
         stage = "lock_wait"
         started = checkpoint = perf_counter()
         call_id = uuid4().hex
-        timings = {}
+        timings = {"prepare_ms": 0, "transport_ms": 0, "initialize_ms": 0}
+        reused = connection.task is not None and not connection.task.done()
         outcome = "exception"
 
         def advance(next_stage):
@@ -82,27 +149,10 @@ def _create_server() -> Server:
 
         try:
             async with lock:
-                advance("prepare")
-                await asyncio.to_thread(_prepare)
-                parameters = StdioServerParameters(
-                    command="docker",
-                    args=["exec", "-i", cli.CONTAINER, "goofish-cli"],
-                )
-                # 不重试工具调用，避免结果不确定时重复执行写操作。
-                advance("transport")
-                async with (
-                    stdio_client(parameters) as (read, write),
-                    ClientSession(
-                        read, write, read_timeout_seconds=timedelta(minutes=10)
-                    ) as session,
-                ):
-                    advance("initialize")
-                    await session.initialize()
-                    advance("call_tool")
-                    result = await session.call_tool(name, arguments)
-                    advance("cleanup")
-                    outcome = "tool_error" if result.isError else "returned"
-                    return result
+                result, reused = await connection.call(name, arguments, advance)
+                advance("cleanup")
+                outcome = "tool_error" if result.isError else "returned"
+                return result
         except Exception:
             # stderr 留下完整堆栈；不记录可能包含消息或凭据的工具参数。
             # 日志流本身失效时仍保留原始异常。
@@ -119,6 +169,7 @@ def _create_server() -> Server:
                     "call_id": call_id,
                     "tool": name,
                     "outcome": outcome,
+                    "session_reused": reused,
                     "total_ms": round((perf_counter() - started) * 1000, 3),
                     **timings,
                 }
@@ -129,8 +180,11 @@ def _create_server() -> Server:
 
 async def _run() -> None:
     server = _create_server()
-    async with stdio_server() as (read, write):
-        await server.run(read, write, server.create_initialization_options())
+    try:
+        async with stdio_server() as (read, write):
+            await server.run(read, write, server.create_initialization_options())
+    finally:
+        await server.sandbox_connection.close()
 
 
 def main() -> None:

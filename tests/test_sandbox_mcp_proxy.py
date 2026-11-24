@@ -256,3 +256,112 @@ def test_file_failure_preserves_tool_result_and_stderr(monkeypatch, tmp_path, ca
     assert invalid.read_text(encoding="utf-8") == "keep"
     assert "timing file write failed" in caplog.text
     assert "goofish_mcp_timing" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_connection_reuses_contexts_serializes_calls_and_closes_on_owner_task(monkeypatch):
+    import asyncio
+
+    calls = []
+    monkeypatch.setattr(proxy, "_prepare", lambda: calls.append("prepare"))
+
+    @asynccontextmanager
+    async def transport(parameters):
+        owner = asyncio.current_task()
+        calls.append("transport")
+        try:
+            yield None, None
+        finally:
+            assert asyncio.current_task() is owner
+            calls.append("transport_closed")
+
+    class Session:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            self.owner = asyncio.current_task()
+            return self
+
+        async def __aexit__(self, *a):
+            assert asyncio.current_task() is self.owner
+            calls.append("session_closed")
+
+        async def initialize(self):
+            calls.append("initialize")
+
+        async def call_tool(self, name, arguments):
+            calls.append(name)
+            if name == "broken":
+                raise OSError("connection lost")
+            return types.CallToolResult(content=[], isError=name == "tool_error")
+
+    monkeypatch.setattr(proxy, "stdio_client", transport)
+    monkeypatch.setattr(proxy, "ClientSession", Session)
+    c = proxy._SandboxConnection()
+    try:
+        a, reused = await c.call("first", {}, lambda stage: None)
+        assert not reused
+        b, reused = await c.call("tool_error", {}, lambda stage: None)
+        assert reused and b.isError
+        assert calls.count("initialize") == 1
+        with pytest.raises(OSError, match="connection lost"):
+            await c.call("broken", {}, lambda stage: None)
+        assert calls.count("broken") == 1
+        _, reused = await c.call("after_recovery", {}, lambda stage: None)
+        assert not reused and calls.count("initialize") == 2
+        assert calls.count("prepare") == 2
+    finally:
+        await c.close()
+    assert calls.count("transport_closed") == 2
+    assert calls.count("session_closed") == 2
+
+
+@pytest.mark.asyncio
+async def test_connection_concurrent_requests_remain_serial_and_cancel_closes(monkeypatch):
+    import asyncio
+
+    active = peak = 0
+    monkeypatch.setattr(proxy, "_prepare", lambda: None)
+
+    @asynccontextmanager
+    async def transport(p):
+        yield None, None
+
+    class Session:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            pass
+
+        async def initialize(self):
+            pass
+
+        async def call_tool(self, name, args):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            try:
+                await asyncio.sleep(0.01 if name != "blocked" else 60)
+                return types.CallToolResult(content=[])
+            finally:
+                active -= 1
+
+    monkeypatch.setattr(proxy, "stdio_client", transport)
+    monkeypatch.setattr(proxy, "ClientSession", Session)
+    c = proxy._SandboxConnection()
+    try:
+        await asyncio.gather(*(c.call(str(i), {}, lambda stage: None) for i in range(3)))
+        assert peak == 1
+        request = asyncio.create_task(c.call("blocked", {}, lambda stage: None))
+        await asyncio.sleep(0.02)
+        request.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await request
+        assert c.task is None and active == 0
+    finally:
+        await c.close()
