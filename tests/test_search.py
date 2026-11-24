@@ -346,22 +346,24 @@ def test_search_passes_sort_and_keeps_default(monkeypatch):
     import importlib
     module = importlib.import_module("goofish_cli.commands.search.search")
     calls = []
-    async def run(query, limit, pages, sort):
-        calls.append((query, limit, pages, sort))
+    async def run(query, limit, pages, sort, min_price, max_price):
+        calls.append((query, limit, pages, sort, min_price, max_price))
         return {}
     monkeypatch.setattr(module, "_run", run)
     module.search("phone")
     module.search("phone", limit=150, pages=5, sort="credit")
-    assert calls == [("phone", 20, 1, "default"), ("phone", 150, 5, "credit")]
+    module.search("phone", sort="active")
+    assert calls == [("phone", 20, 1, "default", None, None), ("phone", 150, 5, "credit", None, None), ("phone", 20, 1, "active", None, None)]
 
 
 @pytest.mark.parametrize("number", [1, 2, 5])
-def test_credit_capture_rejects_unsorted_requests_on_every_page(number):
+@pytest.mark.parametrize("sort,field,value", [("credit", "credit", "credit_desc"), ("active", "modify", "desc")])
+def test_sorted_capture_rejects_unsorted_requests_on_every_page(number, sort, field, value):
     from goofish_cli.commands.search.search import _SearchPage
     import json
     from urllib.parse import urlencode
     page = object.__new__(_SearchPage)
-    page.sort, page.query, page.number, page.generation = "credit", "phone", number, 7
+    page.sort, page.query, page.number, page.generation = sort, "phone", number, 7
     page.requests = {}
     class Request:
         url = "https://www.goofish.com/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/"
@@ -370,7 +372,7 @@ def test_credit_capture_rejects_unsorted_requests_on_every_page(number):
     bad = Request(sortField="", sortValue="")
     page._request(bad)
     assert not page.requests
-    good = Request(sortField="credit", sortValue="credit_desc")
+    good = Request(sortField=field, sortValue=value)
     page._request(good)
     assert page.requests == {good: 7}
 
@@ -384,3 +386,49 @@ def test_mcp_existing_search_tool_exposes_sort():
     tools = asyncio.run(server.list_tools())
     schema = next(tool.inputSchema for tool in tools if tool.name == "search_items")
     assert schema["properties"]["sort"]["default"] == "default"
+    for name in ("min_price", "max_price"):
+        assert {"type": "integer"} in schema["properties"][name]["anyOf"]
+        assert schema["properties"][name]["default"] is None
+
+
+@pytest.mark.parametrize("bounds", [{"min_price": -1}, {"max_price": -1}, {"min_price": 1.5}, {"min_price": 500, "max_price": 100}])
+def test_price_validation_before_browser(bounds):
+    from goofish_cli.commands.search.search import search
+    from goofish_cli.core.errors import GoofishError
+    with pytest.raises(GoofishError, match="price"):
+        search("phone", **bounds)
+
+
+@pytest.mark.parametrize("number", [1, 2, 5])
+@pytest.mark.parametrize("low,high", [(100, 500), (0, 500), (100, None), (None, 500)])
+def test_price_capture_requires_requested_range_on_every_page(number, low, high):
+    from goofish_cli.commands.search.search import _SearchPage
+    from urllib.parse import urlencode
+    import json
+    page = object.__new__(_SearchPage)
+    page.query, page.number, page.generation, page.requests = "phone", number, 7, {}
+    low = str(low) if low is not None else "undefined"
+    high = str(high) if high is not None else "undefined"
+    page.price_range = f"priceRange:{low},{high}"
+    class Request:
+        url = "https://www.goofish.com/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/"
+        def __init__(self, filters):
+            self.post_data = urlencode({"data": json.dumps({"keyword": "phone", "pageNumber": number, "propValueStr": {"searchFilter": filters}})})
+    page._request(Request(""))
+    page._request(Request("priceRange:1,2;"))
+    assert not page.requests
+    good = Request(page.price_range + ";")
+    page._request(good)
+    assert page.requests == {good: 7}
+
+
+def test_search_passes_price_bounds(monkeypatch):
+    import importlib
+    module = importlib.import_module("goofish_cli.commands.search.search")
+    calls = []
+    async def run(*args):
+        calls.append(args)
+        return {}
+    monkeypatch.setattr(module, "_run", run)
+    module.search("phone", sort="active", min_price=100, max_price=500)
+    assert calls == [("phone", 20, 1, "active", 100, 500)]

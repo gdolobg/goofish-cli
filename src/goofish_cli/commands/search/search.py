@@ -26,6 +26,11 @@ from goofish_cli.core.browser import auto_scroll, goofish_page
 from goofish_cli.core.errors import AuthRequiredError, GoofishError, PartialResultError
 from goofish_cli.core.search_data import normalize_search
 
+SORT_OPTIONS = {
+    "credit": ("信用排序", "credit", "credit_desc"),
+    "active": ("最近活跃", "modify", "desc"),
+}
+
 # limit 是**跨页总上限**（去重后条数）。站点每页 30 卡，50 页满配远超此值，
 # 200 是给 MCP 调用方的运行时护栏（每页 ~4s，200 条 ≈ 7 页 ≈ 40s）。
 MAX_LIMIT = 200
@@ -213,10 +218,14 @@ class _SearchPage:
             if "data" not in fields:
                 fields = parse_qs(urlsplit(request.url).query)
             data = json.loads(fields.get("data", ["{}"])[0])
-            if getattr(self, "sort", "default") == "credit" and (
-                data.get("sortField") != "credit" or data.get("sortValue") != "credit_desc"
-            ):
+            sort = SORT_OPTIONS.get(self.__dict__.get("sort", "default"))
+            if sort and (data.get("sortField"), data.get("sortValue")) != sort[1:]:
                 return
+            price_range = self.__dict__.get("price_range")
+            if price_range:
+                filters = data.get("propValueStr", {}).get("searchFilter", "")
+                if price_range not in filters.split(";"):
+                    return
             if data.get("keyword") == self.query and int(data.get("pageNumber", 0)) == self.number:
                 self.requests[request] = self.generation
         except (ValueError, TypeError, AttributeError):
@@ -396,7 +405,10 @@ async def _walk_pages(
     return fetched_pages, total_pages, stopped_reason
 
 
-async def _run(query: str, limit: int, pages: int, sort: str = "default") -> dict[str, Any]:
+async def _run(
+    query: str, limit: int, pages: int, sort: str = "default",
+    min_price: int | None = None, max_price: int | None = None,
+) -> dict[str, Any]:
     url = _build_search_url(query)
 
     items: list[dict[str, Any]] = []
@@ -429,14 +441,29 @@ async def _run(query: str, limit: int, pages: int, sort: str = "default") -> dic
 
         assert payload is not None
         _raise_for_failed_page(payload)
-        if sort == "credit":
+        if sort in SORT_OPTIONS:
             page.sort = sort
             page.begin(query, 1)
             await page.evaluate("window.scrollTo(0, 0)")
             await page.wait_for_timeout(500)
             await page.locator('[class*="search-select-title"]').first.hover(timeout=5000)
             await page.wait_for_timeout(500)
-            await page.get_by_text("信用排序", exact=True).click(timeout=5000)
+            await page.get_by_text(SORT_OPTIONS[sort][0], exact=True).click(timeout=5000)
+            await page.wait_for_timeout(PAGE_STABLE_MS)
+            payload = await page.extract()
+            _raise_for_failed_page(payload)
+        if min_price is not None or max_price is not None:
+            low = str(min_price) if min_price is not None else "undefined"
+            high = str(max_price) if max_price is not None else "undefined"
+            page.price_range = f"priceRange:{low},{high}"
+            page.begin(query, 1)
+            inputs = page.locator('input[class*="search-price-input"]')
+            # 页面在失焦时自动搜索；只接受两端都匹配的最终请求。
+            for index, value in enumerate((min_price, max_price)):
+                if value is not None:
+                    await inputs.nth(index).fill(str(value))
+                    await inputs.nth(index).press("Tab")
+                    await page.wait_for_timeout(500)
             await page.wait_for_timeout(PAGE_STABLE_MS)
             payload = await page.extract()
             _raise_for_failed_page(payload)
@@ -481,6 +508,8 @@ async def _run(query: str, limit: int, pages: int, sort: str = "default") -> dic
         "stopped_reason": stopped_reason,
         "query": query,
         "sort": sort,
+        "min_price": min_price,
+        "max_price": max_price,
         "result_kind": result_kind,
         "reported_match_count": reported_match_count,
         "recommendations_present": recommendations_present,
@@ -497,15 +526,23 @@ async def _run(query: str, limit: int, pages: int, sort: str = "default") -> dic
 @command(
     namespace="search",
     name="items",
-    description="搜索闲鱼商品（浏览器路径；pages跨页，sort=default综合或credit信用排序）",
+    description="搜索闲鱼商品（浏览器路径；pages跨页，sort=default综合、credit信用或active最近活跃；min_price/max_price整数元价格区间）",
     strategy=Strategy.COOKIE,
     columns=["rank", "item_id", "title", "price", "condition", "brand", "location", "badge", "url"],
 )
-def search(query: str, limit: int = DEFAULT_LIMIT, pages: int = 1, sort: str = "default") -> dict[str, Any]:
-    if sort not in {"default", "credit"}:
-        raise GoofishError("sort 必须为 default 或 credit")
+def search(
+    query: str, limit: int = DEFAULT_LIMIT, pages: int = 1, sort: str = "default",
+    min_price: int | None = None, max_price: int | None = None,
+) -> dict[str, Any]:
+    if sort != "default" and sort not in SORT_OPTIONS:
+        raise GoofishError("sort 必须为 default、credit 或 active")
+    for value in (min_price, max_price):
+        if value is not None and (type(value) is not int or value < 0):
+            raise GoofishError("min_price/max_price 必须为非负整数，单位为元")
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise GoofishError("min_price 不能大于 max_price")
     q = str(query).strip()
-    result = asyncio.run(_run(q, _normalize_limit(limit), _normalize_pages(pages), sort))
+    result = asyncio.run(_run(q, _normalize_limit(limit), _normalize_pages(pages), sort, min_price, max_price))
     result["query"] = q
     return result
 

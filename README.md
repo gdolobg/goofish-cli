@@ -384,8 +384,14 @@ uv run ruff check src tests  # 零告警
 
 ---
 
+## 搜索排序与价格筛选
+
+搜索支持 `goofish search items "iphone duo 正品" --sort credit --pages 5 --limit 150`。MCP 的现有 `search_items` 同样接受 `sort: "credit"`；省略时保持综合排序。信用排序逐页核验实际请求的排序字段，无法确认时返回错误，不以综合结果冒充。
+
+最近活跃排序使用 `goofish search items "iphone" --sort active`；MCP `search_items` 传入 `sort: "active"`。同样逐页核验页面实际发送的排序字段。
+
+价格范围（整数元）：`goofish search items "iphone" --min-price 100 --max-price 500 --sort active`。MCP `search_items` 使用 `min_price: 100, max_price: 500`；可只填一端，且最低价不能高于最高价。每页核验实际价格筛选参数。
+
 ## 📜 License
 
 Apache-2.0 © 2026 fancy。详见 [LICENSE](./LICENSE) 和 [NOTICE](./NOTICE)。
-
-搜索支持 `goofish search items "iphone duo 正品" --sort credit --pages 5 --limit 150`。MCP 的现有 `search_items` 同样接受 `sort: "credit"`；省略时保持综合排序。信用排序逐页核验实际请求的排序字段，无法确认时返回错误，不以综合结果冒充。
