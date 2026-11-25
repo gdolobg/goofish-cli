@@ -1,6 +1,6 @@
 # 其他机器安装（含独立桌面沙盒）
 
-此包为 Maxuria 本地分发版本 `0.6.3+maxuria.20261124.2`，不是上游 PyPI 正式发布。
+此包为 Maxuria 本地分发版本 `0.6.3+maxuria.20261125`，不是上游 PyPI 正式发布。
 包含此前的沙盒与下单工具，以及 首次 MCP 工具调用时自动启动 Docker Desktop 和沙盒。Windows 启动会恢复完整用户环境，避免 ProgramData 缺失，并使 Docker 独立于 MCP 客户端运行。
 
 ## 环境要求
@@ -21,7 +21,7 @@
 ```powershell
 py -3.12 -m venv C:\tools\goofish\.venv
 $python = 'C:\tools\goofish\.venv\Scripts\python.exe'
-& $python -m pip install .\goofish_cli-0.6.3+maxuria.20261124.2-py3-none-any.whl
+& $python -m pip install .\goofish_cli-0.6.3+maxuria.20261125-py3-none-any.whl
 $goofish = 'C:\tools\goofish\.venv\Scripts\goofish.exe'
 & $goofish sandbox --help
 & $goofish skills install --list
@@ -33,7 +33,7 @@ $goofish = 'C:\tools\goofish\.venv\Scripts\goofish.exe'
 
 ```sh
 python3 -m venv "$HOME/.local/share/goofish-venv"
-"$HOME/.local/share/goofish-venv/bin/python" -m pip install ./goofish_cli-0.6.3+maxuria.20261124.2-py3-none-any.whl
+"$HOME/.local/share/goofish-venv/bin/python" -m pip install ./goofish_cli-0.6.3+maxuria.20261125-py3-none-any.whl
 GOOFISH="$HOME/.local/share/goofish-venv/bin/goofish"
 "$GOOFISH" sandbox --help
 ```
@@ -86,7 +86,7 @@ Claude 默认位置：`goofish skills install`。
 
 ## 验收和维护
 
-重连后检查 19 个工具，包含 order_preview 和 order_create_unpaid。
+重连后检查 20 个工具，包含 auth_logout、order_preview 和 order_create_unpaid。
 依次调用 auth_status、search_items、item_view、order_preview；先不调用任何写工具。
 沙盒会执行真实闲鱼操作，不是模拟环境。下单只创建待付款订单，不付款。
 结果不确定时先查订单，不换 request_id 自动重提。本机与沙盒防重复记录不共享。
@@ -105,3 +105,7 @@ Claude 默认位置：`goofish skills install`。
 本版还修复 Windows MCP 中文输出编码，并记录每次调用的分阶段耗时到 stderr 和 `~/.goofish-cli/logs/mcp-timing-<UTC日期>-<进程ID>.jsonl`。耗时记录不包含工具参数或结果；旧日志需按需清理。
 
 更多细节见同包 sandbox.md、mcp-setup.md、unpaid-orders.md。
+
+本版稳定搜索排序菜单的点击，修复只填最高价时的请求匹配；确认空结果时跳过排序和价格控件。排序失败诊断只在本机保存，位于沙箱持久卷内的 `~/.goofish-cli/diagnostics/search-sort/`，保留最近 5 份。
+
+首次安装及升级的完整 Agent 提示词见同包 AGENT-INSTALL-PROMPT.txt。升级应保留原环境、观察端口及登录态卷，并重新连接 MCP。

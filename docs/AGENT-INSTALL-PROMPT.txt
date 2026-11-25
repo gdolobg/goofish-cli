@@ -1,0 +1,41 @@
+请实际执行安装或升级 Goofish MCP，并通过 Codex 已连接的 MCP 验证，使用 Docker 独立桌面沙箱模式。
+
+本次固定目标版本：0.6.3+maxuria.20261125
+Release：https://github.com/gdolobg/goofish-cli/releases/tag/v0.6.3-maxuria.20261125
+
+1. 检查现状
+确认操作系统、Python 3.11+、Docker 和 Linux 容器可用。检查已有 goofish 的绝对路径、Python 环境、版本、Codex MCP 配置、沙箱状态和观察端口。不要展示 Cookie 或配置中的凭据。缺少依赖时协助安装，不自动重启机器。
+
+2. 首次安装或升级
+下载上述固定 Release 的 ZIP、INSTALL.md 和 SHA256SUMS.txt，核验 SHA256 后解压，再验证 ZIP 内 CHECKSUMS.sha256。阅读 INSTALL.md，不用上游 PyPI 包替代。
+首次安装：创建独立 Python 虚拟环境，用该环境的 Python 安装 ZIP 内 goofish_cli-0.6.3+maxuria.20261125-py3-none-any.whl。
+已有安装：备份现有 MCP 配置，升级原 Python 环境。用原环境 Python 执行 python -m pip install --upgrade <wheel绝对路径>，或 uv pip install --python <原环境Python绝对路径> <wheel绝对路径>。Windows 如因 MCP 进程占用 goofish.exe 而失败，先断开对应 Goofish MCP，停止其进程后再安装，不终止其他服务。
+已有 goofish update 命令时，只有确认仓库 latest Release 恰好为上述固定目标版本，才可使用该命令；否则使用固定 wheel，不安装其他版本。update 已成功重建沙箱时不重复重建。
+安装后执行 goofish version，必须显示 0.6.3+maxuria.20261125。不要复制其他机器的 Cookie、虚拟环境或 Docker 状态卷。
+
+3. 沙箱与登录
+已有沙箱手动升级时，先记录原观察端口，执行 goofish sandbox stop，再执行 goofish sandbox start --rebuild --port <原端口>。保留 goofish-sandbox-state 登录态卷，禁止删除卷或执行 logout；原有有效登录不需要重新扫码。
+首次安装时执行 goofish sandbox start，再执行 goofish sandbox login，提供本机 noVNC 观察链接，等待我用闲鱼 App 扫码确认。已有登录过期时同样由我亲自登录。观察端口只绑定本机，不开放公网。
+
+4. 配置与重新连接
+只更新现有 Codex 配置的 goofish 条目，保留其他设置。command 使用目标机器实际 goofish 的绝对路径：
+
+[mcp_servers.goofish]
+command = '安装环境中的 goofish 可执行文件绝对路径'
+args = ["sandbox", "mcp"]
+startup_timeout_sec = 180
+tool_timeout_sec = 180
+
+确保 Codex 能从 PATH 找到 docker，不把 noVNC 地址填成 MCP URL，不保留另一个宿主机模式的 Goofish 服务。安装或升级后必须重新连接 MCP，使旧进程及其复用连接退出；如需要我操作，明确说明重连方法，完成后继续验收。
+
+5. 实际只读验收
+必须通过 Codex 已连接的 MCP 调用验证，不能只用 CLI 结果代替：
+- 握手、列出工具正常，共 20 个工具，含 auth_logout、order_preview、order_create_unpaid。
+- auth_status 返回 ok=true、valid=true。
+- search_items 搜索“乐高 10313”，返回至少一条真实结果，再用其 item_id 调用 item_view，确认标题、价格、图片可读。
+- 分别使用 sort=credit 和 sort=active 验证排序；用 max_price=500、不传 min_price 验证最高价筛选。必须确认响应成功；明确空结果可记为零命中，不能把异常或部分结果视为通过。
+- 连续调用只读工具，确认 ~/.goofish-cli/logs/ 有新 mcp-timing JSONL 记录，并检查复用连接时 session_reused=true。
+- 如排序失败，保留错误中的 sort-<uuid> 编号，检查沙箱内 ~/.goofish-cli/diagnostics/search-sort/ 的对应 JSON 和截图；仅据实报告，不把采集诊断等同于排序通过。
+
+遇到登录或平台验证，提供沙箱观察链接，等待我亲自处理后继续，不绕过验证。不要执行 auth_logout，不发消息、不发布、不删除、不创建订单、不付款。
+最后报告版本、安装路径、配置及备份位置、沙箱及端口、各项 MCP 实测结果和未完成事项。首次安装和构建需要联网；Mac/Linux 和新排序逻辑尚未实机验证，请据实报告兼容情况。

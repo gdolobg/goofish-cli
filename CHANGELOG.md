@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261125] (2026-11-25)
+
+### Maxuria distribution
+
+- Stabilize visible search sort controls before clicking and save bounded local diagnostics on failure.
+- Skip sort and price controls for confirmed empty results; match the platform zero lower bound when only a maximum price is supplied.
+- Refresh installation and upgrade prompts, preserving existing environments, viewer ports and login volumes, with explicit MCP reconnection and read-only acceptance checks.
+
 ## [0.6.3+maxuria.20261124.2] (2026-11-24)
 
 ### Maxuria distribution
