@@ -359,9 +359,10 @@ def test_search_passes_sort_and_keeps_default(monkeypatch):
 @pytest.mark.parametrize("number", [1, 2, 5])
 @pytest.mark.parametrize("sort,field,value", [("credit", "credit", "credit_desc"), ("active", "modify", "desc")])
 def test_sorted_capture_rejects_unsorted_requests_on_every_page(number, sort, field, value):
-    from goofish_cli.commands.search.search import _SearchPage
     import json
     from urllib.parse import urlencode
+
+    from goofish_cli.commands.search.search import _SearchPage
     page = object.__new__(_SearchPage)
     page.sort, page.query, page.number, page.generation = sort, "phone", number, 7
     page.requests = {}
@@ -378,9 +379,10 @@ def test_sorted_capture_rejects_unsorted_requests_on_every_page(number, sort, fi
 
 
 def test_mcp_existing_search_tool_exposes_sort():
-    from goofish_cli.mcp_server import _register_one
-    from goofish_cli.core.registry import registry
     from mcp.server.fastmcp import FastMCP
+
+    from goofish_cli.core.registry import registry
+    from goofish_cli.mcp_server import _register_one
     server = FastMCP("search-sort-test")
     _register_one(registry()["search.items"], server)
     tools = asyncio.run(server.list_tools())
@@ -402,12 +404,13 @@ def test_price_validation_before_browser(bounds):
 @pytest.mark.parametrize("number", [1, 2, 5])
 @pytest.mark.parametrize("low,high", [(100, 500), (0, 500), (100, None), (None, 500)])
 def test_price_capture_requires_requested_range_on_every_page(number, low, high):
-    from goofish_cli.commands.search.search import _SearchPage
-    from urllib.parse import urlencode
     import json
+    from urllib.parse import urlencode
+
+    from goofish_cli.commands.search.search import _SearchPage
     page = object.__new__(_SearchPage)
     page.query, page.number, page.generation, page.requests = "phone", number, 7, {}
-    low = str(low) if low is not None else "undefined"
+    low = str(low) if low is not None else "0"
     high = str(high) if high is not None else "undefined"
     page.price_range = f"priceRange:{low},{high}"
     class Request:
@@ -416,6 +419,7 @@ def test_price_capture_requires_requested_range_on_every_page(number, low, high)
             self.post_data = urlencode({"data": json.dumps({"keyword": "phone", "pageNumber": number, "propValueStr": {"searchFilter": filters}})})
     page._request(Request(""))
     page._request(Request("priceRange:1,2;"))
+    page._request(Request("priceRange:undefined,500;"))
     assert not page.requests
     good = Request(page.price_range + ";")
     page._request(good)
@@ -432,3 +436,225 @@ def test_search_passes_price_bounds(monkeypatch):
     monkeypatch.setattr(module, "_run", run)
     module.search("phone", sort="active", min_price=100, max_price=500)
     assert calls == [("phone", 20, 1, "active", 100, 500)]
+
+
+@pytest.mark.parametrize("sort,label", [("credit", "信用排序"), ("active", "最近活跃")])
+def test_sort_uses_visible_text_without_build_specific_classes(sort, label):
+    from goofish_cli.commands.search.search import _select_sort
+    events = []
+
+    class Locator:
+        def and_(self, other):
+            assert other == ":visible"
+            events.append("visible")
+            return self
+
+        @property
+        def first(self):
+            return self
+
+        @property
+        def last(self):
+            return self
+
+        async def hover(self, timeout):
+            events.append(("hover", timeout))
+
+        async def element_handle(self, timeout):
+            events.append(("element", timeout))
+            return self
+
+        async def wait_for_element_state(self, state, timeout):
+            events.append((state, timeout))
+
+        async def dispose(self):
+            events.append("dispose")
+
+        async def click(self, timeout):
+            events.append(("click", timeout))
+
+    class Page:
+        async def evaluate(self, script):
+            assert script == "window.scrollTo(0, 0)"
+
+        def locator(self, selector):
+            assert selector == ":visible"
+            return selector
+
+        def get_by_text(self, text, exact=False):
+            if exact:
+                assert text == label
+            else:
+                assert text.fullmatch("综合")
+                assert not text.fullmatch("综合评价")
+            return Locator()
+
+    asyncio.run(_select_sort(Page(), sort))
+    assert events == ["visible", ("hover", 8000), "visible", ("element", 5000), ("stable", 5000), ("click", 5000), "dispose"]
+
+
+@pytest.mark.parametrize("phase", ["hover", "stable", "click", "diagnostic"])
+def test_sort_timeout_reports_manual_recovery_without_silent_fallback(phase, monkeypatch, tmp_path):
+    import importlib
+
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    from goofish_cli.commands.search.search import _select_sort
+    from goofish_cli.core.errors import GoofishError
+    module = importlib.import_module("goofish_cli.commands.search.search")
+    diagnostics = module.SortDiagnostics
+    monkeypatch.setattr(module, "SortDiagnostics", lambda page: diagnostics(page, root=tmp_path))
+
+    class Page:
+        async def evaluate(self, script):
+            if phase == "diagnostic" and script != "window.scrollTo(0, 0)":
+                raise RuntimeError("page closed")
+            return {"menuItems": [{"text": "信用排序", "display": "none"}]}
+
+        def locator(self, selector):
+            return self
+
+        def get_by_text(self, text, exact=False):
+            return self
+
+        def and_(self, other):
+            return self
+
+        @property
+        def first(self):
+            return self
+
+        @property
+        def last(self):
+            return self
+
+        async def hover(self, timeout):
+            if phase in ("hover", "diagnostic"):
+                raise PlaywrightTimeoutError("missing control")
+
+        async def element_handle(self, timeout):
+            return self
+
+        async def wait_for_element_state(self, state, timeout):
+            assert state == "stable"
+            if phase == "stable":
+                raise PlaywrightTimeoutError("element is not stable")
+
+        async def dispose(self):
+            pass
+
+        async def click(self, timeout):
+            assert phase != "stable", "unstable options must never be clicked"
+            raise PlaywrightTimeoutError("element is not visible")
+
+    with pytest.raises(GoofishError, match="无法确认搜索排序.*沙箱观察页面") as captured:
+        asyncio.run(_select_sort(Page(), "credit"))
+
+    message = str(captured.value)
+    assert ("点击信用排序选项" if phase == "click" else "等待信用排序选项稳定" if phase == "stable" else "悬停排序入口") in message
+    assert ('"diagnostic_error":"RuntimeError"' if phase == 'diagnostic' else '"display":"none"') in message
+    assert captured.value.__cause__ is not None
+
+
+@pytest.mark.parametrize("sort", ["credit", "active", "default"])
+def test_confirmed_empty_search_needs_no_sort_or_price_controls(monkeypatch, sort):
+    import importlib
+    from contextlib import asynccontextmanager
+    module = importlib.import_module("goofish_cli.commands.search.search")
+
+    class Page:
+        def begin(self, query, number):
+            self.query, self.number = query, number
+
+        async def goto(self, *args, **kwargs):
+            pass
+
+        async def wait_for_timeout(self, ms):
+            pass
+
+        async def extract(self):
+            return {"items": [], "empty": True, "result_kind": "empty", "reported_match_count": 0}
+
+        async def evaluate(self, script, arg=None):
+            return {"hasNext": False, "totalPages": 0}
+
+        def locator(self, selector):
+            pytest.fail("confirmed empty results must not require filter controls")
+
+    @asynccontextmanager
+    async def browser():
+        yield Page()
+
+    async def scroll(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(module, "goofish_page", browser)
+    # Preserve isinstance-based dispatch while avoiding real browser listeners.
+    class SearchPage(Page):
+        def __init__(self, raw):
+            pass
+    monkeypatch.setattr(module, "_SearchPage", SearchPage)
+    monkeypatch.setattr(module, "auto_scroll", scroll)
+    result = asyncio.run(module._run("no matches", 30, 5, sort, 100, 500))
+    assert result["items"] == []
+    assert result["complete"] is True
+    assert result["result_kind"] == "empty"
+    assert result["sort"] == sort
+    assert result["stopped_reason"] == "last_page"
+
+
+@pytest.mark.parametrize("bounds,expected", [((None, 500), "priceRange:0,500"), ((0, 500), "priceRange:0,500"), ((100, 500), "priceRange:100,500"), ((100, None), "priceRange:100,undefined")])
+def test_run_uses_platform_price_range_format(monkeypatch, bounds, expected):
+    import importlib
+    from contextlib import asynccontextmanager
+    module = importlib.import_module("goofish_cli.commands.search.search")
+    pages = []
+
+    class Page:
+        def __init__(self, raw=None):
+            pages.append(self)
+
+        def begin(self, query, number):
+            self.query, self.number = query, number
+
+        async def goto(self, *args, **kwargs):
+            pass
+
+        async def wait_for_timeout(self, ms):
+            pass
+
+        async def extract(self):
+            return _page_payload(["100"])
+
+        async def evaluate(self, script, arg=None):
+            return {"hasNext": False, "totalPages": 1}
+
+        def locator(self, selector):
+            assert selector == 'input[class*="search-price-input"]'
+            return self
+
+        def nth(self, index):
+            return self
+
+        async def fill(self, value):
+            pass
+
+        async def press(self, key):
+            assert key == "Tab"
+            assert self.price_range == expected
+
+    @asynccontextmanager
+    async def browser():
+        yield None
+
+    async def scroll(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(module, "goofish_page", browser)
+    monkeypatch.setattr(module, "_SearchPage", Page)
+    monkeypatch.setattr(module, "auto_scroll", scroll)
+    result = asyncio.run(module._run("phone", 5, 1, "default", *bounds))
+    assert result["complete"] is True
+    assert result["min_price"] == bounds[0]
+    assert result["max_price"] == bounds[1]
+    assert pages[0].price_range == expected

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from contextlib import suppress
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -25,6 +26,7 @@ from goofish_cli.core import Strategy, command
 from goofish_cli.core.browser import auto_scroll, goofish_page
 from goofish_cli.core.errors import AuthRequiredError, GoofishError, PartialResultError
 from goofish_cli.core.search_data import normalize_search
+from goofish_cli.core.sort_diagnostics import SortDiagnostics
 
 SORT_OPTIONS = {
     "credit": ("信用排序", "credit", "credit_desc"),
@@ -405,6 +407,77 @@ async def _walk_pages(
     return fetched_pages, total_pages, stopped_reason
 
 
+_SORT_STATE_JS = r"""() => {
+  const allowed = new Set(['综合', '信用排序', '最近活跃', '距离最近', '新降价', '新发布', '价格']);
+  const summarize = selector => [...document.querySelectorAll(selector)]
+    .filter(e => allowed.has((e.textContent || '').trim())).slice(0, 8).map(e => {
+      const s = getComputedStyle(e), r = e.getBoundingClientRect();
+      return {text: e.textContent.trim(), display: s.display, visibility: s.visibility,
+        opacity: s.opacity, pointerEvents: s.pointerEvents,
+        x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height)};
+    });
+  return {ready: document.readyState, scrollY: Math.round(scrollY),
+    titles: summarize('[class*="search-select-title"]'),
+    menuItems: summarize('[class*="search-select-item"]')};
+}"""
+
+
+async def _select_sort(page: Any, sort: str) -> None:
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    label = SORT_OPTIONS[sort][0]
+    diagnostics = SortDiagnostics(page)
+    await diagnostics.start()
+    stage = "回到排序入口"
+    handle = None
+    try:
+        await diagnostics.mark("scroll_to_top")
+        await page.evaluate("window.scrollTo(0, 0)")
+        # 按可见文字定位，避免依赖页面构建生成的 class 或命中隐藏菜单。
+        visible = page.locator(":visible")
+        title = page.get_by_text(re.compile(r"^(综合|信用排序|最近活跃)$")).and_(visible).first
+        stage = "悬停排序入口"
+        await diagnostics.mark("hover_start")
+        await title.hover(timeout=8000)
+        await diagnostics.mark("hover_complete")
+        stage = f"等待{label}选项稳定"
+        await diagnostics.mark("stable_start")
+        option = page.get_by_text(label, exact=True).and_(visible).last
+        handle = await option.element_handle(timeout=5000)
+        if handle is None:
+            raise GoofishError(f"{label}选项已消失，无法确认搜索排序")
+        # Wait without pointer actions, before click retries can scroll a hover menu away.
+        await handle.wait_for_element_state("stable", timeout=5000)
+        await diagnostics.mark("stable_complete")
+        stage = f"点击{label}选项"
+        await diagnostics.mark("click_start")
+        await handle.click(timeout=5000)
+        await diagnostics.mark("click_complete")
+    except PlaywrightTimeoutError as exc:
+        try:
+            state = await asyncio.wait_for(page.evaluate(_SORT_STATE_JS), timeout=2)
+        except Exception as diagnostic_error:
+            state = {"diagnostic_error": type(diagnostic_error).__name__}
+        reason = next((hint for hint in ("intercepts pointer events", "not visible", "not stable", "detached")
+                       if hint in str(exc)), "timeout")
+        await diagnostics.mark("failure")
+        diagnostic_id = await diagnostics.finish({"stage": stage, "reason": reason, "error_type": type(exc).__name__}, source_error=exc)
+        reference = f"诊断编号：{diagnostic_id}；" if diagnostic_id else "诊断文件未能保存；"
+        snapshot = json.dumps(state, ensure_ascii=False, separators=(",", ":"))[:1600]
+        raise GoofishError(
+            f"{reference}{label}失败：{stage}超时（{reason}），无法确认搜索排序；"
+            f"请在沙箱观察页面检查搜索页后重新找货。排序菜单状态：{snapshot}"
+        ) from exc
+    except Exception as exc:
+        await diagnostics.finish({"stage": stage, "error_type": type(exc).__name__}, source_error=exc)
+        raise
+    finally:
+        await diagnostics.finish()
+        if handle is not None:
+            with suppress(Exception):
+                await handle.dispose()
+
+
 async def _run(
     query: str, limit: int, pages: int, sort: str = "default",
     min_price: int | None = None, max_price: int | None = None,
@@ -441,19 +514,16 @@ async def _run(
 
         assert payload is not None
         _raise_for_failed_page(payload)
-        if sort in SORT_OPTIONS:
+        if sort in SORT_OPTIONS and not payload.get("empty"):
             page.sort = sort
             page.begin(query, 1)
-            await page.evaluate("window.scrollTo(0, 0)")
-            await page.wait_for_timeout(500)
-            await page.locator('[class*="search-select-title"]').first.hover(timeout=5000)
-            await page.wait_for_timeout(500)
-            await page.get_by_text(SORT_OPTIONS[sort][0], exact=True).click(timeout=5000)
+            await _select_sort(page, sort)
             await page.wait_for_timeout(PAGE_STABLE_MS)
             payload = await page.extract()
             _raise_for_failed_page(payload)
-        if min_price is not None or max_price is not None:
-            low = str(min_price) if min_price is not None else "undefined"
+        if not payload.get("empty") and (min_price is not None or max_price is not None):
+            # 闲鱼将未填写的最低价序列化为 0。
+            low = str(min_price) if min_price is not None else "0"
             high = str(max_price) if max_price is not None else "undefined"
             page.price_range = f"priceRange:{low},{high}"
             page.begin(query, 1)
