@@ -1,5 +1,6 @@
 """浏览器回写必须保留另一个进程已经保存的新登录。"""
 
+import asyncio
 import json
 import subprocess
 import sys
@@ -127,3 +128,89 @@ async def test_unchanged_login_accepts_browser_cookie_refresh(sandbox):
         sm._records_to_flat(decrypt_cookies(source.read_bytes()))["refreshed"]
         == "synthetic-refresh"
     )
+
+
+@pytest.mark.parametrize("invalidate", [None, "generation", "disconnect", "failure"])
+async def test_browser_connection_reuse_and_recovery(monkeypatch, invalidate):
+    from goofish_cli.core import browser_runtime
+    monkeypatch.setattr(browser_runtime, "browser_connection_reuse_enabled", lambda: True)
+    opened, closed = [], []
+
+    @asynccontextmanager
+    async def playwright():
+        connected = [True]
+        browser = SimpleNamespace(is_connected=lambda: connected[0])
+        async def connect(_):
+            opened.append(connected)
+            return browser
+        try:
+            yield SimpleNamespace(chromium=SimpleNamespace(connect_over_cdp=connect))
+        finally:
+            closed.append(browser)
+
+    monkeypatch.setattr(sb, "async_playwright", playwright)
+    try:
+        async with sb._browser_connection("generation-1") as first:
+            pass
+        assert len(opened) == 1 and len(closed) == 0
+        if invalidate == "disconnect":
+            opened[0][0] = False
+        if invalidate == "failure":
+            with pytest.raises(RuntimeError, match="uncertain"):
+                async with sb._browser_connection("generation-1"):
+                    raise RuntimeError("uncertain")
+            assert len(opened) == 1  # Never retry the failed operation.
+        generation = "generation-2" if invalidate == "generation" else "generation-1"
+        async with sb._browser_connection(generation) as second:
+            assert (first is second) == (invalidate is None)
+        assert len(opened) == (1 if invalidate is None else 2)
+    finally:
+        await sb.close_browser_connection()
+    assert len(closed) == len(opened)
+
+
+async def test_mcp_browser_commands_share_loop_and_thread():
+    import asyncio
+    import threading
+
+    from goofish_cli.core import browser_runtime as runtime
+
+    async def identity():
+        return asyncio.get_running_loop(), threading.get_ident()
+
+    def command():
+        return runtime.run_browser_command(identity())
+
+    try:
+        first = await runtime.execute_browser_command(command, {})
+        second = await runtime.execute_browser_command(command, {})
+        assert first == second
+        assert first[0] is not asyncio.get_running_loop()
+    finally:
+        runtime.close_browser_runtime()
+
+@pytest.mark.parametrize('connect_fails', [False, True])
+async def test_connection_cleanup_error_preserves_original_failure(monkeypatch, connect_fails):
+    from goofish_cli.core import browser_runtime
+    from goofish_cli.core.errors import GoofishError
+
+    monkeypatch.setattr(browser_runtime, 'browser_connection_reuse_enabled', lambda: True)
+
+    @asynccontextmanager
+    async def playwright():
+        async def connect(_):
+            if connect_fails:
+                raise RuntimeError('connect failed')
+            return SimpleNamespace(is_connected=lambda: True)
+        try:
+            yield SimpleNamespace(chromium=SimpleNamespace(connect_over_cdp=connect))
+        finally:
+            raise RuntimeError('cleanup failed')
+
+    monkeypatch.setattr(sb, 'async_playwright', playwright)
+    error = GoofishError if connect_fails else RuntimeError
+    message = '无法连接沙箱浏览器' if connect_fails else 'operation failed'
+    with pytest.raises(error, match=message):
+        async with sb._browser_connection('test-generation'):
+            raise RuntimeError('operation failed')
+    assert getattr(asyncio.get_running_loop(), '_goofish_browser_connection', None) is None

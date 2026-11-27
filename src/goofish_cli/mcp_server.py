@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import os
 import sys
 from typing import Any
 
@@ -57,7 +58,11 @@ def _register_one(cmd, server=None) -> None:
 
     async def handler(**kwargs: Any) -> dict[str, Any]:
         try:
-            result = await asyncio.to_thread(cmd.func, **kwargs)
+            if os.environ.get("GOOFISH_DESKTOP_SANDBOX") == "1" and tool_name in {"search_items", "item_view"}:
+                from goofish_cli.core.browser_runtime import execute_browser_command
+                result = await execute_browser_command(cmd.func, kwargs)
+            else:
+                result = await asyncio.to_thread(cmd.func, **kwargs)
             return {"ok": True, "data": result}
         except PartialResultError as e:
             return {"ok": False, "data": e.data, "error": e.error, "message": str(e)}
@@ -83,7 +88,11 @@ def main() -> None:
         raise SystemExit(2)
 
     _register_all()
-    mcp.run()
+    try:
+        mcp.run()
+    finally:
+        from goofish_cli.core.browser_runtime import close_browser_runtime
+        close_browser_runtime()
 
 
 if __name__ == "__main__":

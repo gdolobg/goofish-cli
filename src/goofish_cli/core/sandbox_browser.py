@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from urllib.request import ProxyHandler, build_opener
 
@@ -100,6 +101,54 @@ def _generation() -> str:
         raise GoofishError("沙箱浏览器未就绪；请检查沙箱状态，不会启动本机浏览器") from exc
 
 
+async def close_browser_connection():
+    loop = asyncio.get_running_loop()
+    cached = getattr(loop, "_goofish_browser_connection", None)
+    loop._goofish_browser_connection = None
+    if cached is not None:
+        await cached[1].__aexit__(None, None, None)
+
+
+async def _connect_browser(playwright):
+    try:
+        return await playwright.chromium.connect_over_cdp(ENDPOINT)
+    except Exception as exc:
+        raise GoofishError("无法连接沙箱浏览器；不会回退到本机浏览器") from exc
+
+
+@asynccontextmanager
+async def _browser_connection(generation):
+    from .browser_runtime import browser_connection_reuse_enabled
+
+    if not browser_connection_reuse_enabled():
+        async with async_playwright() as playwright:
+            yield await _connect_browser(playwright)
+        return
+    loop = asyncio.get_running_loop()
+    cached = getattr(loop, "_goofish_browser_connection", None)
+    if cached is not None and (cached[0] != generation or not cached[2].is_connected()):
+        await close_browser_connection()
+        cached = None
+    if cached is None:
+        manager = async_playwright()
+        playwright = await manager.__aenter__()
+        try:
+            browser = await _connect_browser(playwright)
+        except BaseException:
+            with suppress(Exception):
+                await manager.__aexit__(None, None, None)
+            raise
+        cached = (generation, manager, browser)
+        loop._goofish_browser_connection = cached
+    try:
+        yield cached[2]
+    except BaseException:
+        # Discard a failed connection, but never replay the uncertain operation.
+        with suppress(Exception):
+            await close_browser_connection()
+        raise
+
+
 @asynccontextmanager
 async def sandbox_page(*, cookies=None, persist_session: bool = True):
     from .browser import _cookies_to_playwright
@@ -120,11 +169,7 @@ async def sandbox_page(*, cookies=None, persist_session: bool = True):
     try:
         generation = _generation()
         state = _read_state()
-        async with async_playwright() as playwright:
-            try:
-                browser = await playwright.chromium.connect_over_cdp(ENDPOINT)
-            except Exception as exc:
-                raise GoofishError("无法连接沙箱浏览器；不会回退到本机浏览器") from exc
+        async with _browser_connection(generation) as browser:
             context = browser.contexts[0]
             current_cookies = await context.cookies()
             current = _records_to_flat(current_cookies)

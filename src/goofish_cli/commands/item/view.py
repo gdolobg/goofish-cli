@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import re
@@ -14,6 +13,7 @@ from typing import Any
 
 from goofish_cli.core import Strategy, command
 from goofish_cli.core.browser import goofish_page
+from goofish_cli.core.browser_runtime import run_browser_command
 from goofish_cli.core.errors import AuthRequiredError, GoofishError
 from goofish_cli.core.item_data import normalize_item
 from goofish_cli.core.item_page import read_item_page
@@ -107,7 +107,7 @@ async def _run(item_id: str) -> dict[str, Any]:
 def view(item_id: str) -> dict[str, Any]:
     normalized = _normalize_item_id(item_id)
     # MCP / table 渲染依赖 dict；image_urls 是列表（JSON 里保留，table 里压成长度）
-    result = asyncio.run(_run(normalized))
+    result = run_browser_command(_run(normalized))
     result["_image_urls_json"] = json.dumps(result.get("image_urls", []), ensure_ascii=False)
     return result
 

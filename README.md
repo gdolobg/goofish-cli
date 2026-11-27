@@ -113,6 +113,8 @@ goofish sandbox run search items '机械键盘' --limit 3
 
 首次启动会下载并构建镜像。Chromium 在容器虚拟桌面里常驻，登录态保存在独立卷；命令不会自动打开宿主机浏览器。平台要求验证时，执行 `goofish sandbox browse --item-id <商品ID>`，在观察页面人工完成。升级后用 `stop`、`start --rebuild` 更新镜像，状态卷保留。
 
+沙箱 MCP 的搜索和商品详情在同一常驻事件循环内复用 Playwright/CDP 连接；每次仍校验账号并保存会话。浏览器重启或连接断开时，下次调用重新连接；失败操作不会自动重放。独立 CLI 调用仍按次建立连接。此优化不改变搜索等待、滚动、排序和逐件执行方式。
+
 如果 `sandbox --help` 不识别命令，当前安装的发行版尚未包含沙箱功能。源码安装、完整的登录/恢复步骤和限制见[沙箱指南](docs/sandbox.md)。
 
 ---

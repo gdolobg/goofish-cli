@@ -24,6 +24,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from goofish_cli.core import Strategy, command
 from goofish_cli.core.browser import auto_scroll, goofish_page
+from goofish_cli.core.browser_runtime import run_browser_command
 from goofish_cli.core.errors import AuthRequiredError, GoofishError, PartialResultError
 from goofish_cli.core.search_data import normalize_search
 from goofish_cli.core.sort_diagnostics import SortDiagnostics
@@ -612,7 +613,7 @@ def search(
     if min_price is not None and max_price is not None and min_price > max_price:
         raise GoofishError("min_price 不能大于 max_price")
     q = str(query).strip()
-    result = asyncio.run(_run(q, _normalize_limit(limit), _normalize_pages(pages), sort, min_price, max_price))
+    result = run_browser_command(_run(q, _normalize_limit(limit), _normalize_pages(pages), sort, min_price, max_price))
     result["query"] = q
     return result
 
