@@ -80,7 +80,7 @@ def get(item_id: str) -> dict:
 
 发布可接受本地图片，也可通过 `images_json` 复用 `media_upload` 的完整收据；`category_json` 和 `location_json` 接收相应工具返回的已确认 DTO。准备或提交失败保留收据与准备信息，分别报告 `not_submitted`、`submission_rejected` 或 `submission_unknown`。返回商品 ID 代表 `accepted`，详情与商品列表回读负责确认实际保存。
 
-搜索观察网页实际发出的搜索响应，按 `keyword/pageNumber` 与请求发起代次关联；分页前清除上一页状态，忽略迟到响应。只有平台控制字段确认的查询结果进入 `items`；无命中时网页的推荐卡片单独识别。未标明语义的标签保留在 `labels`，品牌、成色等未知属性返回 null，卖家昵称与地域分开。翻页失败保留部分结果，CLI 非零退出，MCP 返回 `ok=false` 和数据及错误。
+搜索观察网页实际发出的搜索响应，按 `keyword/pageNumber` 与请求发起代次关联；分页前清除上一页状态，忽略迟到响应。搜索结束（包括失败和取消）移除请求、响应监听器，并取消、等待未完成的响应读取任务，清空请求与结果状态，避免常驻页面上累积旧观察器。响应超时、JSON 读取失败、结构不匹配分别使用 `search_response_timeout`、`search_response_json_error`、`search_response_schema_mismatch`，首页错误提示包含对应错误码，翻页失败则保留在错误数据中；不记录原始响应或异常正文。只有平台控制字段确认的查询结果进入 `items`；无命中时网页的推荐卡片单独识别。未标明语义的标签保留在 `labels`，品牌、成色等未知属性返回 null，卖家昵称与地域分开。翻页失败保留部分结果，CLI 非零退出，MCP 返回 `ok=false` 和数据及错误。
 
 搜索排序使用可见的“综合 / 信用排序 / 最近活跃”文字定位入口，不依赖构建生成的 class，也不选择隐藏菜单。切换后仍须观察到匹配 `sortField/sortValue` 的真实搜索响应，失败时明确提示人工检查沙箱页面，不降级为综合排序。平台已明确返回空结果时跳过排序和价格控件操作，正常返回零命中。
 

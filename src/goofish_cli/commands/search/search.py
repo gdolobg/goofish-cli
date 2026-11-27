@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-from contextlib import suppress
+from contextlib import aclosing, suppress
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -244,6 +244,18 @@ class _SearchPage:
     async def _capture(self, response: Any, generation: int) -> None:
         try:
             raw = await response.json()
+        except Exception as exc:
+            payload = {"items": [], "response_error": "search_response_json_error",
+                       "response_exception_type": type(exc).__name__}
+        else:
+            payload = self._parse_response(raw)
+        if generation == self.generation:
+            self.payload = payload
+            self.ready.set()
+
+    @staticmethod
+    def _parse_response(raw: Any) -> dict[str, Any]:
+        try:
             if not isinstance(raw, dict):
                 raise ValueError("invalid_search_response")
             values = raw.get("ret") or []
@@ -257,20 +269,36 @@ class _SearchPage:
                 payload = {"items": [], "schema_unknown": True}
             else:
                 payload = normalize_search(raw)
-        except Exception:
-            payload = {"items": [], "schema_unknown": True}
-        if generation == self.generation:
-            self.payload = payload
-            self.ready.set()
+        except Exception as exc:
+            return {"items": [], "schema_unknown": True,
+                    "response_error": "search_response_schema_mismatch",
+                    "response_exception_type": type(exc).__name__}
+        if payload.get("schema_unknown"):
+            payload["response_error"] = "search_response_schema_mismatch"
+        return payload
+
+    async def aclose(self) -> None:
+        self.page.remove_listener("request", self._request)
+        self.page.remove_listener("response", self._schedule)
+        self.generation += 1
+        tasks = tuple(self.tasks)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.tasks.clear()
+        self.requests.clear()
+        self.payload = None
+        self.ready.clear()
 
     async def extract(self) -> dict[str, Any]:
         try:
             await asyncio.wait_for(self.ready.wait(), timeout=8)
         except TimeoutError:
-            return {"items": [], "schema_unknown": True, "response_error": "search_response_timeout"}
+            return {"items": [], "response_error": "search_response_timeout"}
         dom = await self.page.evaluate(_EXTRACT_JS, MAX_LIMIT)
         if not isinstance(dom, dict) or self.payload is None:
-            return {"items": [], "schema_unknown": True}
+            return {"items": [], "schema_unknown": True,
+                    "response_error": "search_response_schema_mismatch"}
         return {**dom, **self.payload,
                 "recommendations_present": bool(self.payload.get("empty") and dom.get("items"))}
 
@@ -296,6 +324,14 @@ def _first_card_id(items: list[dict[str, Any]]) -> str:
 def _raise_for_failed_page(payload: dict[str, Any]) -> None:
     """首页级失败（0 卡片）按原语义抛错；翻页途中的失败由调用方保留部分数据并报告失败。"""
     items = payload.get("items") or []
+    response_error = payload.get("response_error")
+    errors = {
+        "search_response_timeout": "搜索响应超时：8 秒内未收到匹配的搜索响应，请检查网络或页面验证状态",
+        "search_response_json_error": "搜索响应 JSON 读取失败：响应体不可读或不是有效 JSON",
+        "search_response_schema_mismatch": "搜索响应结构不匹配：缺少有效结果列表或搜索控制字段，不能把推荐卡片当搜索命中",
+    }
+    if response_error in errors:
+        raise GoofishError(f"[{response_error}] {errors[response_error]}")
     if payload.get("schema_unknown"):
         raise GoofishError("未观察到可确认的搜索响应结构，不能把推荐卡片当搜索命中")
     if payload.get("response_error") and not payload.get("requiresAuth") and not payload.get("blocked"):
@@ -494,8 +530,7 @@ async def _run(
     reported_match_count = None
     recommendations_present = False
 
-    async with goofish_page() as raw_page:
-        page = _SearchPage(raw_page)
+    async with goofish_page() as raw_page, aclosing(_SearchPage(raw_page)) as page:
         # ---- 第 1 页（保留瞬时登录墙重试：整页重新导航）----
         payload: dict[str, Any] | None = None
         for attempt in range(1, AUTH_WALL_ATTEMPTS + 1):

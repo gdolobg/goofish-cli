@@ -593,6 +593,9 @@ def test_confirmed_empty_search_needs_no_sort_or_price_controls(monkeypatch, sor
     class SearchPage(Page):
         def __init__(self, raw):
             pass
+
+        async def aclose(self):
+            pass
     monkeypatch.setattr(module, "_SearchPage", SearchPage)
     monkeypatch.setattr(module, "auto_scroll", scroll)
     result = asyncio.run(module._run("no matches", 30, 5, sort, 100, 500))
@@ -613,6 +616,9 @@ def test_run_uses_platform_price_range_format(monkeypatch, bounds, expected):
     class Page:
         def __init__(self, raw=None):
             pages.append(self)
+
+        async def aclose(self):
+            pass
 
         def begin(self, query, number):
             self.query, self.number = query, number
