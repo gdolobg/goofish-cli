@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261127] (2026-11-27)
+
+### Maxuria distribution
+
+- Reuse Playwright/CDP connections for sandbox MCP search and item view commands on one persistent thread and event loop.
+- Reconnect on a subsequent call after browser restart, disconnection or failure without replaying uncertain operations; clean up resources at shutdown.
+- Preserve original failures if connection cleanup also fails, with regression coverage.
+- Refresh installation and upgrade prompts to require wheel installation, sandbox rebuild and MCP reconnection, and distinguish MCP session reuse from browser connection reuse.
+
 ## [0.6.3+maxuria.20261125] (2026-11-25)
 
 ### Maxuria distribution
