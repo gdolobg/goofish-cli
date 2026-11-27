@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3+maxuria.20261127.1] (2026-11-27)
+
+### Maxuria distribution
+
+- Remove search request/response listeners and cancel and await response tasks on success, failure and cancellation, preventing observers from accumulating on reused browser pages.
+- Distinguish response timeouts, JSON read failures and schema mismatches with separate error codes and messages, including pagination error records.
+- Update installation and upgrade acceptance prompts to check four searches and one detail call in one MCP session and preserve specific error codes.
+
 ## [0.6.3+maxuria.20261127] (2026-11-27)
 
 ### Maxuria distribution
